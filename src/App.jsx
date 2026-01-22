@@ -26,11 +26,29 @@ const CONFIG = {
     WARNING: "风险引导"
   }
 };
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
+const apiPost = async (path, body) => {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(data?.error || 'Request failed');
+    err.status = resp.status;
+    err.code = data?.error || '';
+    throw err;
+  }
+  return data;
+};
 
 // --- 主要组件 ---
 export default function MindYaApp() {
-  const [view, setView] = useState('splash'); // splash, welcome, onboarding, login, profile, main
+  const [view, setView] = useState('splash'); // splash, welcome, onboarding, login, register, profile, main
   const [user, setUser] = useState({ age: '', grade: '', gender: '', riskLevel: 'low' });
+  const [currentUser, setCurrentUser] = useState('');
   const [messages, setMessages] = useState([]);
 
   // 1. 加载动画 [cite: 28]
@@ -46,9 +64,39 @@ export default function MindYaApp() {
     switch (view) {
       case 'splash': return <SplashScreen />;
       case 'welcome': return <WelcomeScreen onStart={() => setView('onboarding')} onSkip={() => setView('login')} />;
-      case 'onboarding': return <OnboardingScreen onComplete={() => setView('login')} />;
-      case 'login': return <LoginScreen onLogin={() => setView('profile')} />;
-      case 'profile': return <ProfileScreen onComplete={(data) => { setUser({ ...user, ...data }); setView('main'); }} />;
+      case 'onboarding': return <OnboardingScreen onComplete={() => setView('register')} />;
+      case 'login':
+        return (
+          <LoginScreen
+            onLogin={async (username, password) => {
+              await apiPost('/api/login', { username, password });
+              setCurrentUser(username);
+              setView('main');
+            }}
+            onRegister={() => setView('register')}
+          />
+        );
+      case 'register':
+        return (
+          <RegisterScreen
+            onRegister={async (username, password) => {
+              await apiPost('/api/register', { username, password });
+              setCurrentUser(username);
+              setView('profile');
+            }}
+            onLogin={() => setView('login')}
+          />
+        );
+      case 'profile':
+        return (
+          <ProfileScreen
+            onComplete={async (data) => {
+              await apiPost('/api/profile', { username: currentUser, ...data });
+              setUser({ ...user, ...data });
+              setView('main');
+            }}
+          />
+        );
       case 'main': return <MainInterface user={user} messages={messages} setMessages={setMessages} />;
       default: return <SplashScreen />;
     }
@@ -196,9 +244,11 @@ function OnboardingScreen({ onComplete }) {
   );
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onRegister }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   return (
     <div className="h-full flex flex-col bg-[#F7F4F2] px-8 pt-16 pb-10">
@@ -235,16 +285,109 @@ function LoginScreen({ onLogin }) {
         </label>
       </div>
 
+      {error && <p className="mt-4 text-center text-xs text-[#D56B4B]">{error}</p>}
       <button
-        onClick={onLogin}
-        className="mt-10 w-full rounded-full bg-[#4B342C] py-3 text-white text-base font-semibold"
+        onClick={async () => {
+          try {
+            setError('');
+            setSubmitting(true);
+            await onLogin(username, password);
+          } catch (e) {
+            if (e.status === 401) {
+              setError('用户名或密码错误');
+            } else {
+              setError(e.message || '登录失败');
+            }
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+        className="mt-6 w-full rounded-full bg-[#4B342C] py-3 text-white text-base font-semibold disabled:opacity-60"
+        disabled={submitting}
       >
-        登录 →
+        {submitting ? '登录中...' : '登录 →'}
       </button>
 
-      <p className="mt-6 text-center text-xs text-[#A89A8E]">
+      <button
+        onClick={onRegister}
+        className="mt-6 text-center text-xs text-[#A89A8E]"
+      >
         还没有账号？<span className="text-[#D56B4B]">去注册</span>
-      </p>
+      </button>
+    </div>
+  );
+}
+
+function RegisterScreen({ onRegister, onLogin }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  return (
+    <div className="h-full flex flex-col bg-[#F7F4F2] px-8 pt-16 pb-10">
+      <div className="flex flex-col items-center text-center">
+        <div className="w-24 h-24 rounded-full bg-[#9BB05A] flex items-center justify-center">
+          <img src={logoImg} alt="MindYa logo" className="w-12 h-12" />
+        </div>
+        <h2 className="mt-6 text-[26px] font-semibold text-[#4B3425]">免费注册</h2>
+      </div>
+
+      <div className="mt-10 space-y-4">
+        <label className="block">
+          <span className="text-sm text-[#8B7A6A]">用户名</span>
+          <div className="mt-2 flex items-center gap-2 rounded-full bg-white px-4 py-3 shadow-sm">
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="请输入用户名"
+              className="w-full text-sm text-[#4B3425] placeholder:text-[#C1B6AA] focus:outline-none"
+            />
+          </div>
+        </label>
+        <label className="block">
+          <span className="text-sm text-[#8B7A6A]">密码</span>
+          <div className="mt-2 flex items-center gap-2 rounded-full bg-white px-4 py-3 shadow-sm">
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="请输入密码"
+              className="w-full text-sm text-[#4B3425] placeholder:text-[#C1B6AA] focus:outline-none"
+            />
+          </div>
+        </label>
+      </div>
+
+      {error && <p className="mt-4 text-center text-xs text-[#D56B4B]">{error}</p>}
+      <button
+        onClick={async () => {
+          try {
+            setError('');
+            setSubmitting(true);
+            await onRegister(username, password);
+          } catch (e) {
+            if (e.status === 409) {
+              setError('用户名已存在');
+            } else {
+              setError(e.message || '注册失败');
+            }
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+        className="mt-6 w-full rounded-full bg-[#4B342C] py-3 text-white text-base font-semibold disabled:opacity-60"
+        disabled={submitting}
+      >
+        {submitting ? '注册中...' : '注册 →'}
+      </button>
+
+      <button
+        onClick={onLogin}
+        className="mt-6 text-center text-xs text-[#A89A8E]"
+      >
+        已有账号？<span className="text-[#D56B4B]">去登录</span>
+      </button>
     </div>
   );
 }
@@ -252,15 +395,25 @@ function LoginScreen({ onLogin }) {
 function ProfileScreen({ onComplete }) {
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState({ gender: '', age: '18', grade: '初中' });
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const ageOptions = ['<8岁', ...Array.from({ length: 11 }, (_, i) => String(i + 8)), '>18岁'];
   const ageItemHeight = 48;
   const ageListRef = useRef(null);
 
-  const next = () => {
+  const next = async () => {
     if (step < 2) {
       setStep(step + 1);
-    } else {
-      onComplete(formData);
+      return;
+    }
+    try {
+      setError('');
+      setSubmitting(true);
+      await onComplete(formData);
+    } catch (e) {
+      setError(e.message || '保存失败');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -361,11 +514,17 @@ function ProfileScreen({ onComplete }) {
         </div>
       )}
 
+      {error && (
+        <div className="mt-4 rounded-full bg-[#F7D6C8] px-4 py-2 text-center text-xs text-[#D56B4B]">
+          {error}
+        </div>
+      )}
       <button
         onClick={next}
-        className="mt-auto w-full rounded-full bg-[#4B342C] py-3 text-white text-base font-semibold"
+        className="mt-auto w-full rounded-full bg-[#4B342C] py-3 text-white text-base font-semibold disabled:opacity-60"
+        disabled={submitting}
       >
-        继续 →
+        {submitting ? '保存中...' : '继续 →'}
       </button>
     </div>
   );
@@ -374,11 +533,57 @@ function ProfileScreen({ onComplete }) {
 function MainInterface({ user }) {
   const [activeTab, setActiveTab] = useState('chat');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    { id: 1, text: "嘿！我是你的心理小助手，今天过得怎么样？", sender: 'ai' }
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const scrollRef = useRef(null);
+  const initializedRef = useRef(false);
+
+  const formatAge = (age) => {
+    if (!age) return '未知年龄';
+    if (String(age).includes('岁') || String(age).includes('<') || String(age).includes('>')) {
+      return String(age);
+    }
+    return `${age}岁`;
+  };
+
+  const buildInitialPrompt = () => {
+    const ageText = formatAge(user?.age);
+    const gradeText = user?.grade || '未知年级';
+    const genderText = user?.gender || '未知性别';
+    return `我现在是${ageText}在读${gradeText}的${genderText}，我想做一个实验。你可以随意问我任何一个问题，我会尽可能真实且完整地回答。基于我的回答，你再继续问下一个问题。我们会这样来回进行，持续下去，直到挖掘出我内心深处的构思——包括谬误、局限、潜能、需要改进的地方，或者任何潜藏在我潜意识中的东西。`;
+  };
+
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const initChat = async () => {
+      const prompt = buildInitialPrompt();
+      const userMsg = { id: Date.now(), text: prompt, sender: 'user' };
+      setMessages([userMsg]);
+
+      try {
+        const resp = await fetch(`${API_BASE}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: prompt }],
+            userProfile: user,
+            role: '日常陪伴',
+          }),
+        });
+        const data = await resp.json();
+        const aiText = data?.text || '我这边有点卡住了，我们稍后再试试。';
+        const aiMsg = { id: Date.now() + 1, text: aiText, sender: 'ai' };
+        setMessages([userMsg, aiMsg]);
+      } catch (e) {
+        const aiMsg = { id: Date.now() + 1, text: '我这边有点卡住了，我们稍后再试试。', sender: 'ai' };
+        setMessages([userMsg, aiMsg]);
+      }
+    };
+
+    initChat();
+  }, [user]);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -393,7 +598,7 @@ function MainInterface({ user }) {
       content: m.text,
     }));
 
-    const resp = await fetch("/api/chat", {
+    const resp = await fetch(`${API_BASE}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

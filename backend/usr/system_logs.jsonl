@@ -1,0 +1,14 @@
+{"type":"system","event":"service_start","endpoint":"server","status":200,"timestamp":"2026-01-22T08:26:54.248Z"}
+{"type":"system","event":"service_start","endpoint":"server","status":200,"timestamp":"2026-01-22T08:54:29.605Z"}
+{"type":"system","event":"api_success","endpoint":"/api/register","method":"POST","status":200,"duration_ms":2,"timestamp":"2026-01-22T08:57:39.823Z"}
+{"type":"system","event":"api_success","endpoint":"/api/profile","method":"POST","status":200,"duration_ms":3,"timestamp":"2026-01-22T08:57:51.694Z"}
+{"type":"system","event":"api_error","endpoint":"/api/login","method":"POST","status":401,"duration_ms":1,"timestamp":"2026-01-22T08:58:42.269Z"}
+{"type":"system","event":"api_error","endpoint":"/api/login","method":"POST","status":401,"duration_ms":1,"timestamp":"2026-01-22T08:58:48.817Z"}
+{"type":"system","event":"api_error","endpoint":"/api/login","method":"POST","status":401,"duration_ms":1,"timestamp":"2026-01-22T08:58:54.091Z"}
+{"type":"system","event":"api_error","endpoint":"/api/login","method":"POST","status":401,"duration_ms":2,"timestamp":"2026-01-22T09:02:18.119Z"}
+{"type":"system","event":"service_start","endpoint":"server","status":200,"timestamp":"2026-01-22T09:02:48.779Z"}
+{"type":"system","event":"api_error","endpoint":"/api/login","method":"POST","status":401,"duration_ms":3,"timestamp":"2026-01-22T09:03:14.224Z"}
+{"type":"system","event":"api_error","endpoint":"/api/register","method":"POST","status":409,"duration_ms":2,"timestamp":"2026-01-22T09:03:27.894Z"}
+{"type":"system","event":"service_start","endpoint":"server","status":200,"timestamp":"2026-01-22T09:10:19.948Z"}
+{"type":"system","event":"api_error","endpoint":"/api/login","method":"POST","status":400,"duration_ms":1,"timestamp":"2026-01-22T09:10:35.422Z"}
+{"type":"system","event":"api_error","endpoint":"/api/login","method":"POST","status":400,"duration_ms":1,"timestamp":"2026-01-22T09:10:36.723Z"}

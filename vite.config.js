@@ -36,6 +36,10 @@ export default defineConfig({
             purpose: 'any maskable'
           }
         ]
+      },
+      workbox: {
+        // SPA 友好：所有路由回退到 index.html
+        navigateFallback: '/index.html'
       }
     })
   ],
