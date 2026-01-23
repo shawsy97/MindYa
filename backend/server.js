@@ -16,6 +16,7 @@ const usersPath = path.join(dataDir, "users.json");
 const profilesPath = path.join(dataDir, "profiles.csv");
 const logsPath = path.join(dataDir, "logs.csv");
 const systemLogPath = path.join(dataDir, "system_logs.jsonl");
+const conversationsPath = path.join(dataDir, "conversations.json");
 
 const ensureDataFiles = () => {
   if (!fs.existsSync(dataDir)) {
@@ -37,6 +38,19 @@ const ensureDataFiles = () => {
   if (!fs.existsSync(systemLogPath)) {
     fs.writeFileSync(systemLogPath, "", "utf-8");
   }
+  if (!fs.existsSync(conversationsPath)) {
+    fs.writeFileSync(conversationsPath, "{}", "utf-8");
+  }
+};
+
+// 读取历史工具函数
+const readConversations = () => {
+  ensureDataFiles();
+  return JSON.parse(fs.readFileSync(conversationsPath, "utf-8"));
+};
+
+const writeConversations = (data) => {
+  fs.writeFileSync(conversationsPath, JSON.stringify(data, null, 2), "utf-8");
 };
 
 const readUsers = () => {
@@ -291,12 +305,24 @@ app.post("/api/chat", async (req, res) => {
 
     // 1) 拼 system prompt：把“非诊断/未成年人/风险引导”写死在后端
     const system = `
-你是青少年心理健康陪伴式AI助手。遵守：
-- 不做心理疾病诊断，不使用医学标签；
-- 优先共情、陪伴、鼓励表达；
-- 若出现自伤/轻生/极端风险表达：保持冷静，明确建议联系现实可信任的大人/学校心理资源，并提供求助渠道。
-角色：${role || "日常陪伴"}。
-用户信息：年龄=${userProfile?.age || ""} 年级=${userProfile?.grade || ""} 性别=${userProfile?.gender || ""}.
+# 角色
+你是“心芽（MindYa）”，一个专门为 8-18 岁青少年设计的心理健康陪伴伙伴 [cite: 6]。你像一个懂孩子、温柔的大哥哥或大姐姐，而不是老师或医生。
+
+# 核心准则
+1. 低门槛陪伴：像聊天一样自然，避免使用“潜意识、认知偏差、实验”等专业术语 。
+2. 非标签化：不输出医学结论（如“你抑郁了”），描述状态（如“最近你似乎有些累”） 。
+3. 陪伴导向：优先通过共情（如“听起来好辛苦”、“我能理解那种感觉”）来建立信任 。
+
+# 对话策略（阶段化引导）
+- 阶段 1（前 3-4 轮）：专注于“看见”用户的情绪，通过开放式提问鼓励表达（例如：你平时遇到这种情况会怎么做？）。
+- 阶段 2（建立连接后）：如果察觉到用户有压力、困扰，可以自然地推荐工具。
+  - 推荐量表：称之为“心情小测试”或“心理天气预报”。
+  - 推荐游戏：称之为“放松小练习”或“心情解压阀”。
+- 阶段 3（风险拦截）：若发现自伤/极端风险，立即转入稳定情绪模式，明确引导其联系现实中的大人 [cite: 62]。
+
+# 当前用户信息
+年龄：${userProfile?.age || ""}；年级：${userProfile?.grade || ""}；性别：${userProfile?.gender || ""}。
+请根据年级调整语气（小学多用鼓励和比喻，高中生可以多一些平等的情绪梳理） 。
 `;
 
     // 2) 调用 DashScope OpenAI 兼容接口
@@ -307,7 +333,7 @@ app.post("/api/chat", async (req, res) => {
         "Authorization": `Bearer ${process.env.DASHSCOPE_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "qwen-plus",        // 你可换成你开通的模型
+        model: "qwen3-max",        // 你可换成你开通的模型
         messages: [
           { role: "system", content: system },
           ...messages, // [{role:"user"|"assistant", content:"..."}]
@@ -350,7 +376,32 @@ app.post("/api/chat", async (req, res) => {
     res.status(500).json({ error: "Server error", detail: String(e) });
   }
 });
+// 获取用户的聊天记录列表
+app.get("/api/history/:username", (req, res) => {
+  const { username } = req.params;
+  const allHistory = readConversations();
+  const userHistory = allHistory[username] || [];
+  res.json(userHistory);
+});
 
+// 保存或更新当前对话
+app.post("/api/history/save", (req, res) => {
+  const { username, conversationId, messages, preview } = req.body;
+  const allHistory = readConversations();
+  if (!allHistory[username]) allHistory[username] = [];
+  
+  const index = allHistory[username].findIndex(c => c.id === conversationId);
+  const record = { id: conversationId, messages, preview, updatedAt: new Date().toISOString() };
+  
+  if (index > -1) {
+    allHistory[username][index] = record;
+  } else {
+    allHistory[username].unshift(record); // 新对话放在最前面
+  }
+  
+  writeConversations(allHistory);
+  res.json({ ok: true });
+});
 app.listen(PORT, "0.0.0.0", () => {
   appendSystemLog({ type: "system", event: "service_start", endpoint: "server", status: 200 });
   console.log(`API listening on http://0.0.0.0:${PORT}`);

@@ -97,7 +97,7 @@ export default function MindYaApp() {
             }}
           />
         );
-      case 'main': return <MainInterface user={user} messages={messages} setMessages={setMessages} />;
+      case 'main': return <MainInterface user={user} username={currentUser} messages={messages} setMessages={setMessages} />;
       default: return <SplashScreen />;
     }
   };
@@ -530,13 +530,73 @@ function ProfileScreen({ onComplete }) {
   );
 }
 
-function MainInterface({ user }) {
+function MainInterface({ user, username }) {
   const [activeTab, setActiveTab] = useState('chat');
   const [menuOpen, setMenuOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [historyList, setHistoryList] = useState([]); // 存储历史列表
+  const [currentConvId, setCurrentConvId] = useState(Date.now().toString()); // 当前对话ID
   const scrollRef = useRef(null);
   const initializedRef = useRef(false);
+
+  // 获取历史列表
+  const fetchHistory = async () => {
+    const data = await fetch(`${API_BASE}/api/history/${username}`).then(r => r.json());
+    setHistoryList(data);
+  };
+
+  useEffect(() => { fetchHistory(); }, [username]);
+
+  // --- 核心：开启新对话的函数 ---
+  const startNewChat = async () => {
+    setMessages([]); // 清空当前消息界面
+    setCurrentConvId(Date.now().toString()); // 生成新ID
+    setMenuOpen(false); // 关闭侧边栏
+    
+    // 初始化第一句话（调用你之前的自然开场白逻辑）
+    const prompt = buildInitialPrompt();
+    try {
+      const resp = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: prompt }],
+          userProfile: user,
+          role: '日常陪伴',
+        }),
+      });
+      const data = await resp.json();
+      const aiMsg = { id: Date.now(), text: data.text, sender: 'ai' };
+      setMessages([aiMsg]);
+      
+      // 自动保存这个新开场的预览到历史记录
+      await saveToHistory([aiMsg]);
+    } catch (e) { console.error(e); }
+  };
+
+  // --- 加载历史对话 ---
+  const loadHistory = (conv) => {
+    setMessages(conv.messages);
+    setCurrentConvId(conv.id);
+    setMenuOpen(false);
+  };
+
+  // 保存到后端的辅助函数
+  const saveToHistory = async (msgs) => {
+    if (msgs.length === 0) return;
+    await fetch(`${API_BASE}/api/history/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        conversationId: currentConvId,
+        messages: msgs,
+        preview: msgs[0]?.text.substring(0, 15) + "..." // 预览文字
+      }),
+    });
+    fetchHistory(); // 刷新列表
+  };
 
   const formatAge = (age) => {
     if (!age) return '未知年龄';
@@ -550,7 +610,7 @@ function MainInterface({ user }) {
     const ageText = formatAge(user?.age);
     const gradeText = user?.grade || '未知年级';
     const genderText = user?.gender || '未知性别';
-    return `我现在是${ageText}在读${gradeText}的${genderText}，我想做一个实验。你可以随意问我任何一个问题，我会尽可能真实且完整地回答。基于我的回答，你再继续问下一个问题。我们会这样来回进行，持续下去，直到挖掘出我内心深处的构思——包括谬误、局限、潜能、需要改进的地方，或者任何潜藏在我潜意识中的东西。`;
+    return `你好，心芽。我是${ageText}的${genderText}，正在上${gradeText}。我今天想和你随便聊聊。`;
   };
 
   useEffect(() => {
@@ -559,8 +619,6 @@ function MainInterface({ user }) {
 
     const initChat = async () => {
       const prompt = buildInitialPrompt();
-      const userMsg = { id: Date.now(), text: prompt, sender: 'user' };
-      setMessages([userMsg]);
 
       try {
         const resp = await fetch(`${API_BASE}/api/chat`, {
@@ -574,11 +632,11 @@ function MainInterface({ user }) {
         });
         const data = await resp.json();
         const aiText = data?.text || '我这边有点卡住了，我们稍后再试试。';
-        const aiMsg = { id: Date.now() + 1, text: aiText, sender: 'ai' };
-        setMessages([userMsg, aiMsg]);
+        const aiMsg = { id: Date.now(), text: aiText, sender: 'ai' };
+        setMessages([aiMsg]);
       } catch (e) {
-        const aiMsg = { id: Date.now() + 1, text: '我这边有点卡住了，我们稍后再试试。', sender: 'ai' };
-        setMessages([userMsg, aiMsg]);
+        const aiMsg = { id: Date.now(), text: '我这边有点卡住了，我们稍后再试试。', sender: 'ai' };
+        setMessages([aiMsg]);
       }
     };
 
@@ -589,7 +647,8 @@ function MainInterface({ user }) {
     if (!input.trim()) return;
 
     const userMsg = { id: Date.now(), text: input, sender: "user" };
-    setMessages(prev => [...prev, userMsg]);
+    const newMsgs = [...messages, userMsg];
+    setMessages(newMsgs);
     setInput("");
 
     // 把你 UI 消息结构转成 API 消息结构
@@ -612,7 +671,9 @@ function MainInterface({ user }) {
     const aiText = data?.text || "我这边有点卡住了，我们稍后再试试。";
 
     const aiMsg = { id: Date.now() + 1, text: aiText, sender: "ai" };
-    setMessages(prev => [...prev, aiMsg]);
+    const finalMsgs = [...newMsgs, aiMsg];
+    setMessages(finalMsgs);
+    saveToHistory(finalMsgs); // 每次聊天完保存
   };
 
 
@@ -637,19 +698,34 @@ function MainInterface({ user }) {
 
       {menuOpen && (
         <div className="absolute inset-0 z-30">
-          <div
-            className="absolute inset-0 bg-[#4B3425]/20"
-            onClick={() => setMenuOpen(false)}
-          />
+          <div className="absolute inset-0 bg-[#4B3425]/20" onClick={() => setMenuOpen(false)} />
           <div className="absolute left-4 top-14 w-64 rounded-2xl bg-[#F7F2EA] p-4 shadow-lg">
-            <button className="w-full flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-[#4B3425]">
+            {/* 点击开启新聊天 */}
+            <button 
+              onClick={startNewChat}
+              className="w-full flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-[#4B3425] hover:bg-gray-50 transition"
+            >
               <span className="h-6 w-6 rounded-full bg-[#9BB05A] inline-flex items-center justify-center text-white">+</span>
               新聊天
             </button>
+            
             <div className="mt-4 text-sm text-[#8B7A6A]">历史聊天</div>
-            <div className="mt-2 space-y-2">
-              <div className="rounded-xl bg-white px-3 py-2 text-sm text-[#4B3425]">最近对话 1</div>
-              <div className="rounded-xl bg-white px-3 py-2 text-sm text-[#4B3425]">最近对话 2</div>
+            <div className="mt-2 space-y-2 overflow-y-auto max-h-60">
+              {historyList.length > 0 ? (
+                historyList.map(conv => (
+                  <button
+                    key={conv.id}
+                    onClick={() => loadHistory(conv)}
+                    className={`w-full text-left rounded-xl px-3 py-2 text-sm transition ${
+                      currentConvId === conv.id ? 'bg-[#9BB05A] text-white' : 'bg-white text-[#4B3425]'
+                    }`}
+                  >
+                    {conv.preview || "新对话"}
+                  </button>
+                ))
+              ) : (
+                <div className="text-xs text-gray-400 text-center py-4">暂无历史记录</div>
+              )}
             </div>
           </div>
         </div>
