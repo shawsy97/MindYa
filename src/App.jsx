@@ -15,6 +15,8 @@ import onboard2Img from './assets/onboard2.png';
 import onboard3Img from './assets/onboard3.png';
 import maleImg from './assets/male.png';
 import femaleImg from './assets/female.png';
+import { listScales } from "./scales/scaleBank";
+import ScaleRunner from "./scales/scaleRunner.jsx";
 
 // --- 模拟配置文件 ---
 const CONFIG = {
@@ -26,7 +28,12 @@ const CONFIG = {
     WARNING: "风险引导"
   }
 };
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+const envApiBase = import.meta.env.VITE_API_BASE || "";
+const API_BASE =
+  envApiBase ||
+  (typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    : "");
 
 const apiPost = async (path, body) => {
   const resp = await fetch(`${API_BASE}${path}`, {
@@ -756,7 +763,7 @@ function MainInterface({ user, username }) {
           </div>
         )}
         
-        {activeTab === 'scale' && <ScalePlaceholder />}
+        {activeTab === 'scale' && <ScaleHub username={username} user={user} />}
         {activeTab === 'games' && <GamesPlaceholder />}
       </div>
 
@@ -795,34 +802,43 @@ function NavBtn({ icon, label, active, onClick, activeColor = 'text-emerald-600'
 }
 
 // --- 占位组件 ---
-function ScalePlaceholder() {
-  const [selected, setSelected] = useState('经常这样');
+function ScaleHub({ username, user }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const ageText = String(user?.age ?? "");
+  const numericAge = Number.parseInt(ageText.replace(/[^\d]/g, ""), 10);
 
-  return (
-    <div className="p-4 text-center bg-[#ffffff]">
-      <h4 className="text-xl font-bold text-[#4B3425] mb-4">轻量心情自测</h4>
-      <div className="bg-[#F7F2EA] p-6 rounded-2xl border border-[#E5D8CC] shadow-[0_6px_18px_rgba(120,98,84,0.25)]">
-        <p className="text-[#6C5B50] mb-4 text-left">最近你感到很有压力吗？</p>
+  if (!selectedId) {
+    const scales = listScales(Number.isNaN(numericAge) ? null : numericAge);
+    return (
+      <div className="space-y-3">
+        <div className="text-[#4B3425] font-semibold text-lg">心情自测</div>
+        <div className="text-xs text-[#8B7A6A]">选择一个量表开始</div>
+
         <div className="space-y-3">
-          {['完全没有', '偶尔会', '经常这样'].map((opt) => {
-            const isSelected = selected === opt;
-            return (
-              <button
-                key={opt}
-                onClick={() => setSelected(opt)}
-                className={`w-full py-3 rounded-xl font-medium border ${
-                  isSelected
-                    ? 'bg-[#9BB05A] text-white border-[#9BB05A]'
-                    : 'bg-white text-[#4B3425] border-[#E5D8CC]'
-                }`}
-              >
-                {opt}
-              </button>
-            );
-          })}
+          {scales.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSelectedId(s.id)}
+              className="w-full text-left rounded-2xl bg-white border border-[#EFE7DE] p-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-[#4B3425] font-semibold">{s.name}</div>
+                <div className="text-[#D56B4B] text-sm">进入 →</div>
+              </div>
+              <div className="mt-1 text-xs text-[#8B7A6A]">时间范围：{s.period}</div>
+            </button>
+          ))}
         </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <ScaleRunner
+      username={username}
+      scaleId={selectedId}
+      onBack={() => setSelectedId(null)}
+    />
   );
 }
 
