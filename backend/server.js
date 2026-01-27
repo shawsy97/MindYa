@@ -13,7 +13,10 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 app.use(cors(corsOptions)); // 生产环境请收紧域名
-app.options("/*", cors(corsOptions));
+app.options('*', (req, res) => {  
+  // your CORS handling  
+  res.sendStatus(200);  
+});  
 app.use(express.json({ limit: "1mb" }));
 
 const dataDir = path.join(__dirname, "usr");
