@@ -1,0 +1,4 @@
+{
+  "app_dir": "backend",
+  "start_command": "npm run start"
+}

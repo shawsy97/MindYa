@@ -8,7 +8,13 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: true })); // 生产环境请收紧域名
+const corsOptions = {
+  origin: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+app.use(cors(corsOptions)); // 生产环境请收紧域名
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 
 const dataDir = path.join(__dirname, "usr");
