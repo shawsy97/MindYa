@@ -17,6 +17,8 @@ import maleImg from './assets/male.png';
 import femaleImg from './assets/female.png';
 import { listScales } from "./scales/scaleBank";
 import ScaleRunner from "./scales/scaleRunner.jsx";
+import { listTasks } from "./tasks/taskBank";
+import TaskRunner from "./tasks/TaskRunner";
 
 // --- 模拟配置文件 ---
 const CONFIG = {
@@ -764,7 +766,7 @@ function MainInterface({ user, username }) {
         )}
         
         {activeTab === 'scale' && <ScaleHub username={username} user={user} />}
-        {activeTab === 'games' && <GamesPlaceholder />}
+        {activeTab === 'games' && <GamesHub username={username} />}
       </div>
 
       {/* 底部输入框或导航 [cite: 70] */}
@@ -785,7 +787,7 @@ function MainInterface({ user, username }) {
       <nav className="bg-white border-t border-gray-100 flex justify-around py-3">
         <NavBtn icon={<MessageCircle/>} label="聊天" active={activeTab==='chat'} onClick={()=>setActiveTab('chat')} activeColor="text-[#4B342C]" />
         <NavBtn icon={<BookOpen/>} label="测测" active={activeTab==='scale'} onClick={()=>setActiveTab('scale')} activeColor="text-[#4B342C]" />
-        <NavBtn icon={<Gamepad2/>} label="游戏" active={activeTab==='games'} onClick={()=>setActiveTab('games')} activeColor="text-[#4B342C]" />
+        <NavBtn icon={<Gamepad2/>} label="游戏" active={activeTab==='games'&& <GamesHub username={username} />} onClick={()=>setActiveTab('games')} activeColor="text-[#4B342C]" />
         <NavBtn icon={<LayoutGrid/>} label="更多" active={activeTab==='more'} onClick={()=>setActiveTab('more')} activeColor="text-[#4B342C]" />
       </nav>
     </div>
@@ -801,7 +803,7 @@ function NavBtn({ icon, label, active, onClick, activeColor = 'text-emerald-600'
   );
 }
 
-// --- 占位组件 ---
+// --- 量表 ---
 function ScaleHub({ username, user }) {
   const [selectedId, setSelectedId] = useState(null);
   const ageText = String(user?.age ?? "");
@@ -842,15 +844,33 @@ function ScaleHub({ username, user }) {
   );
 }
 
-function GamesPlaceholder() {
+function GamesHub({ username }) {
+  const [taskId, setTaskId] = useState(null);
+
+  if (!taskId) {
+    const tasks = listTasks();
+    return (
+      <div className="grid grid-cols-2 gap-4">
+        {tasks.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTaskId(t.id)}
+            className="aspect-square bg-[#F7F2EA] rounded-3xl flex flex-col items-center justify-center p-4 text-center shadow-sm"
+          >
+            <Gamepad2 className="w-10 h-10 text-[#4B342C] mb-2" />
+            <span className="font-bold text-[#6C5B50] text-sm">{t.name}</span>
+            <span className="text-xs text-[#8B7A6A] mt-1">{t.durationHint}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-2 gap-4">
-      {['情绪气球', '压力切碎机', '呼吸森林'].map(game => (
-        <div key={game} className="aspect-square bg-[#F7F2EA] rounded-3xl flex flex-col items-center justify-center p-4 text-center shadow-sm">
-          <Gamepad2 className="w-10 h-10 text-[#4B342C] mb-2" />
-          <span className="font-bold text-[#6C5B50] text-sm">{game} [cite: 54]</span>
-        </div>
-      ))}
-    </div>
+    <TaskRunner
+      username={username}
+      taskId={taskId}
+      onBack={() => setTaskId(null)}
+    />
   );
 }

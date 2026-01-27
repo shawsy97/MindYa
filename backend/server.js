@@ -14,6 +14,7 @@ app.use(express.json({ limit: "1mb" }));
 const dataDir = path.join(__dirname, "usr");
 const usersPath = path.join(dataDir, "users.json");
 const profilesPath = path.join(dataDir, "profiles.csv");
+const resultsPath = path.join(dataDir, "results.csv");
 const logsPath = path.join(dataDir, "logs.csv");
 const systemLogPath = path.join(dataDir, "system_logs.jsonl");
 const conversationsPath = path.join(dataDir, "conversations.json");
@@ -31,6 +32,9 @@ const ensureDataFiles = () => {
       "username,gender,age,grade,scaleResult,modelResult,gameResult,createdAt,updatedAt\n",
       "utf-8"
     );
+  }
+  if (!fs.existsSync(resultsPath)) {
+    fs.writeFileSync(resultsPath, "username,type,data,createdAt\n", "utf-8");
   }
   if (!fs.existsSync(logsPath)) {
     fs.writeFileSync(logsPath, "username,action,detail,createdAt\n", "utf-8");
@@ -192,9 +196,21 @@ const updateResults = ({ username, type, data }) => {
   const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
   if (type === "scale") found.scaleResult = payload;
   if (type === "model") found.modelResult = payload;
-  if (type === "game") found.gameResult = payload;
+  if (type === "game" || type === "task") found.gameResult = payload;
   found.updatedAt = now;
   writeCsv(header, rows, profilesPath);
+};
+
+const appendResult = ({ username, type, data }) => {
+  ensureDataFiles();
+  const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
+  const row = [
+    csvEscape(username),
+    csvEscape(type),
+    csvEscape(payload),
+    csvEscape(new Date().toISOString()),
+  ].join(",");
+  fs.appendFileSync(resultsPath, `${row}\n`, "utf-8");
 };
 
 const appendLog = ({ username, action, detail }) => {
@@ -276,6 +292,7 @@ app.post("/api/results", (req, res) => {
     return res.status(400).json({ error: "Missing username or type" });
   }
   updateResults({ username, type, data });
+  appendResult({ username, type, data });
   appendLog({ username, action: `result:${type}`, detail: data });
   return res.json({ ok: true });
 });
