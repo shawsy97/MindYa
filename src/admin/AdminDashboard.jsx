@@ -1,0 +1,988 @@
+// AdminDashboard.jsx
+import React, { useState, useEffect } from 'react';
+import { 
+  Users, 
+  TrendingUp, 
+  AlertTriangle, 
+  BarChart3, 
+  MessageCircle,
+  Home,
+  LogOut
+} from 'lucide-react';
+import logoImg from '../assets/logo.png';
+import ConversationsTab from './ConversationsTab';
+import ConversationDetail from './ConversationDetail';
+import UserDetail from './UserDetail'; // 新增导入
+
+export default function AdminDashboard({ admin, onLogout }) {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [data, setData] = useState({
+    users: [],
+    scales: [],
+    highRisk: { scales: [], analytics: [] },
+    conversations: []
+  });
+  const [loading, setLoading] = useState(true);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null); // 用于跟踪选中的用户
+
+  // 获取数据
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        
+        const usersRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/users`);
+        const usersData = await usersRes.json();
+        
+        const scalesRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/scales`);
+        const scalesData = await scalesRes.json();
+        
+        const highRiskRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/high-risk-students`);
+        const highRiskData = await highRiskRes.json();
+        
+        const conversationsRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/conversations`);
+        const conversationsData = await conversationsRes.json();
+        
+        setData({
+          users: usersData,
+          scales: scalesData,
+          highRisk: highRiskData,
+          conversations: conversationsData
+        });
+      } catch (error) {
+        console.error('获取数据失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // 计算统计数据
+  const stats = {
+    totalStudents: data.users.filter(u => u.role === 'student').length,
+    activeStudents: data.users.filter(u => 
+      u.profile && 
+      new Date(u.lastLoginAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    ).length,
+    totalScales: data.scales.length,
+    highRiskCount: data.highRisk.scales.length
+  };
+
+  // 渲染内容区域
+  const renderContent = () => {
+    // 如果选择了对话，显示对话详情
+    if (selectedConversation) {
+      return <ConversationDetail 
+        conversation={selectedConversation} 
+        onBack={() => setSelectedConversation(null)} 
+      />;
+    }
+    
+    // 如果选择了用户，显示用户详情
+    if (selectedUser) {
+      return <UserDetail 
+        user={selectedUser} 
+        conversations={data.conversations} 
+        onBack={() => setSelectedUser(null)}
+        onSelectConversation={setSelectedConversation}
+      />;
+    }
+    
+    // 否则显示当前标签页的内容
+    switch(activeTab) {
+      case 'overview':
+        return <OverviewTab stats={stats} />;
+      case 'students':
+        return <UsersTab 
+          users={data.users} 
+          loading={loading} 
+          onSelectUser={setSelectedUser} 
+        />;
+      case 'scales':
+        return <ScalesTab scales={data.scales} loading={loading} />;
+      case 'conversations':
+        return <ConversationsTab 
+          loading={loading} 
+          conversations={data.conversations} 
+          onSelectConversation={setSelectedConversation} 
+        />;
+      case 'highRisk':
+        return <HighRiskTab highRisk={data.highRisk} loading={loading} />;
+      default:
+        return <OverviewTab stats={stats} />;
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-gray-50 max-w-md mx-auto">
+      {/* 顶部导航栏 */}
+      <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-gray-200 sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <img src={logoImg} alt="Logo" className="w-8 h-8 rounded-full" />
+          <h2 className="font-semibold text-[#4B3425] text-base">心芽管理后台</h2>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-[#8B7A6A]">{admin.username}</span>
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1 text-sm text-[#D56B4B] hover:text-[#D56B4B]/80"
+          >
+            <LogOut size={16} />
+            <span className="hidden sm:inline">退出</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 主内容区 */}
+      <div className={`flex-1 overflow-y-auto ${selectedConversation || selectedUser ? 'pb-4' : 'pb-16'}`}>
+        {renderContent()}
+      </div>
+
+      {/* 移动端底部导航栏 - 只在没有选中用户或对话时显示 */}
+      {!selectedConversation && !selectedUser && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-lg max-w-md mx-auto">
+          <div className="flex justify-around items-center h-16">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'overview' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <Home size={22} />
+              <span className="text-xs mt-1">概览</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('students')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'students' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <Users size={22} />
+              <span className="text-xs mt-1">用户</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('scales')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'scales' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <BarChart3 size={22} />
+              <span className="text-xs mt-1">量表</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('conversations')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'conversations' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <MessageCircle size={22} />
+              <span className="text-xs mt-1">对话</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('highRisk')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'highRisk' ? 'text-[#D56B4B]' : 'text-gray-500'}`}
+            >
+              <AlertTriangle size={22} />
+              <span className="text-xs mt-1">预警</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// UsersTab组件 - UI优化版
+function UsersTab({ users, loading, onSelectUser }) {
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-4">
+        {/* 标题骨架 */}
+        <div className="bg-white rounded-2xl shadow-sm p-5 animate-pulse">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gray-200 rounded-xl"></div>
+              <div className="space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-32"></div>
+                <div className="h-3 bg-gray-200 rounded w-40"></div>
+              </div>
+            </div>
+            <div className="h-8 bg-gray-200 rounded-full w-20"></div>
+          </div>
+        </div>
+        
+        {/* 用户卡片骨架 */}
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="bg-white rounded-2xl shadow-sm p-5 animate-pulse">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
+                <div className="space-y-2">
+                  <div className="h-4 bg-gray-200 rounded w-24"></div>
+                  <div className="flex gap-2">
+                    <div className="h-3 bg-gray-200 rounded w-12"></div>
+                    <div className="h-3 bg-gray-200 rounded w-12"></div>
+                    <div className="h-3 bg-gray-200 rounded w-12"></div>
+                  </div>
+                </div>
+              </div>
+              <div className="h-4 bg-gray-200 rounded w-20"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  
+  const filteredUsers = users.filter(u => u.role === 'student');
+  
+  // 获取用户头像颜色
+  const getAvatarColor = (username) => {
+    if (!username) return 'from-blue-500 to-cyan-500';
+    const colors = [
+      'from-blue-500 to-cyan-500',
+      'from-purple-500 to-pink-500',
+      'from-green-500 to-emerald-500',
+      'from-amber-500 to-orange-500',
+      'from-rose-500 to-red-500',
+      'from-indigo-500 to-violet-500'
+    ];
+    const charCode = username.charCodeAt(0) || 0;
+    return colors[charCode % colors.length];
+  };
+
+  // 获取用户首字母
+  const getInitial = (username) => {
+    if (!username) return '?';
+    if (/^[\u4e00-\u9fa5]/.test(username)) {
+      return username.charAt(0);
+    }
+    return username.charAt(0).toUpperCase();
+  };
+
+  // 格式化注册时间
+  const formatRegisterTime = (timestamp) => {
+    if (!timestamp) return '未知';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return '今天注册';
+    if (diffDays === 1) return '昨天注册';
+    if (diffDays < 7) return `${diffDays}天前注册`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}周前注册`;
+    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  };
+
+  // 计算统计数据
+  const stats = {
+    total: filteredUsers.length,
+    active: filteredUsers.filter(u => 
+      u.lastLoginAt && new Date(u.lastLoginAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    ).length,
+    hasProfile: filteredUsers.filter(u => u.profile).length,
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-6">
+      {/* 统计卡片 */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+              <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                <span className="text-xs font-bold text-white">总</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">总用户数</p>
+              <p className="text-xl font-bold text-gray-900">{stats.total}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
+              <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                <span className="text-xs font-bold text-white">活</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">活跃用户</p>
+              <p className="text-xl font-bold text-gray-900">{stats.active}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
+              <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center">
+                <span className="text-xs font-bold text-white">档</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">有档案用户</p>
+              <p className="text-xl font-bold text-gray-900">{stats.hasProfile}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 标题区域 */}
+      <div className="bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-2xl flex items-center justify-center shadow-sm">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5 0h-15" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="font-bold text-xl text-gray-900">用户列表</h2>
+              <p className="text-sm text-gray-500">所有注册的用户信息</p>
+            </div>
+          </div>
+          <div className="bg-gradient-to-r from-blue-500 to-cyan-500 px-4 py-2 rounded-full shadow-sm">
+            <span className="text-sm font-medium text-white">{filteredUsers.length} 名用户</span>
+          </div>
+        </div>
+      </div>
+      
+      {/* 用户列表 */}
+      <div className="space-y-4">
+        {filteredUsers.length > 0 ? (
+          filteredUsers.map((user) => (
+            <div 
+              key={user._id || user.username}
+              onClick={() => onSelectUser(user)}
+              className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 hover:border-blue-300 hover:shadow-lg transition-all duration-200 cursor-pointer group"
+            >
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                    {/* 用户头像 */}
+                    <div className="relative">
+                      <div className={`w-14 h-14 bg-gradient-to-br ${getAvatarColor(user.username)} rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-md`}>
+                        {getInitial(user.username)}
+                      </div>
+                      {/* 在线状态 */}
+                      <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white ${
+                        user.lastLoginAt && new Date(user.lastLoginAt) > new Date(Date.now() - 5 * 60 * 1000) 
+                          ? 'bg-green-500' 
+                          : 'bg-gray-300'
+                      }`}></div>
+                    </div>
+                    
+                    {/* 用户信息 */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-semibold text-gray-900 text-lg truncate">{user.username}</h3>
+                        <div className="flex items-center gap-2">
+                          {user.profile?.gender && (
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              user.profile.gender === '男生' ? 'bg-blue-100 text-blue-700' :
+                              user.profile.gender === '女生' ? 'bg-pink-100 text-pink-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {user.profile.gender}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-2">
+                        {user.profile?.age && (
+                          <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-medium rounded-full border border-amber-100">
+                            {user.profile.age}
+                          </span>
+                        )}
+                        {user.profile?.grade && (
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-full border border-indigo-100">
+                            {user.profile.grade}
+                          </span>
+                        )}
+                        {user.profile?.scaleResult && (
+                          <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full border border-green-100">
+                            已评估
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* 注册时间 */}
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500 mb-1">注册时间</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {formatRegisterTime(user.createdAt)}
+                    </div>
+                    <div className={`text-xs mt-1 ${
+                      user.lastLoginAt ? 'text-green-600' : 'text-gray-500'
+                    }`}>
+                      {user.lastLoginAt ? '最近登录过' : '从未登录'}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* 底部信息栏 */}
+                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>点击查看详情</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
+            <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5 0h-15" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">暂无用户数据</h3>
+            <p className="text-gray-500 text-sm mb-4">系统当前没有用户数据，用户注册后将在此显示</p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm">等待用户注册</span>
+            </div>
+          </div>
+        )}
+      </div>
+      
+      {/* 底部提示 */}
+      {filteredUsers.length > 0 && (
+        <div className="text-center pt-4">
+          <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>共 {filteredUsers.length} 名用户 • 点击任意用户卡片查看详情</span>
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+function OverviewTab({ stats }) {
+  // 模拟一些额外的统计数据和活动记录
+  const additionalStats = {
+    todayNewUsers: 3,
+    avgSessionTime: '12分30秒',
+    completionRate: '78%',
+    riskRate: '5%'
+  };
+
+  const recentActivities = [
+    { id: 1, user: 'xsy', action: '完成了心理健康量表', time: '10分钟前', icon: '📊', color: 'blue' },
+    { id: 2, user: 'wxy', action: '开始新的对话咨询', time: '25分钟前', icon: '💬', color: 'green' },
+    { id: 3, user: 'zzj', action: '更新了个人档案', time: '1小时前', icon: '👤', color: 'purple' },
+    { id: 4, user: 'Hom1', action: '登录了系统', time: '2小时前', icon: '🔐', color: 'amber' },
+    { id: 5, user: 'lhs', action: '提交了游戏任务', time: '3小时前', icon: '🎮', color: 'indigo' }
+  ];
+
+  // 系统健康状态
+  const systemHealth = {
+    status: '运行正常',
+    uptime: '99.8%',
+    responseTime: '120ms',
+    lastCheck: '刚刚'
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-6">
+      {/* 标题区域 */}
+      <div className="bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-2xl flex items-center justify-center shadow-sm">
+              <BarChart3 className="text-blue-600" size={24} />
+            </div>
+            <div>
+              <h2 className="font-bold text-xl text-gray-900">数据概览</h2>
+              <p className="text-sm text-gray-500">实时系统数据与统计</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="text-sm text-green-600 font-medium">实时更新</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 主要统计卡片网格 */}
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard 
+          title="总用户数" 
+          value={stats.totalStudents} 
+          icon={<Users className="text-white" size={24} />}
+          bgColor="bg-gradient-to-br from-blue-500 to-cyan-500"
+          iconBgColor="bg-blue-100"
+          description="已注册用户总数"
+          change="+2.5%"
+          changeType="positive"
+        />
+        <StatCard 
+          title="活跃用户" 
+          value={stats.activeStudents} 
+          icon={<TrendingUp className="text-white" size={24} />}
+          bgColor="bg-gradient-to-br from-green-500 to-emerald-500"
+          iconBgColor="bg-green-100"
+          description="7天内活跃用户"
+          change="+8.3%"
+          changeType="positive"
+        />
+        <StatCard 
+          title="量表提交" 
+          value={stats.totalScales} 
+          icon={<BarChart3 className="text-white" size={24} />}
+          bgColor="bg-gradient-to-br from-purple-500 to-pink-500"
+          iconBgColor="bg-purple-100"
+          description="评估量表提交数"
+          change="+15.2%"
+          changeType="positive"
+        />
+        <StatCard 
+          title="高危预警" 
+          value={stats.highRiskCount} 
+          icon={<AlertTriangle className="text-white" size={24} />}
+          bgColor="bg-gradient-to-br from-amber-500 to-orange-500"
+          iconBgColor="bg-amber-100"
+          description="需要关注的风险"
+          change={stats.highRiskCount > 0 ? "+1" : "0"}
+          changeType={stats.highRiskCount > 0 ? "negative" : "neutral"}
+        />
+      </div>
+
+      {/* 二级统计卡片 */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-violet-100 rounded-xl flex items-center justify-center">
+              <div className="w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center">
+                <span className="text-xs font-bold text-white">新</span>
+              </div>
+            </div>
+            <div className="flex-1">
+              <p className="text-xs text-gray-500">今日新增</p>
+              <p className="text-xl font-bold text-gray-900">{additionalStats.todayNewUsers} 人</p>
+            </div>
+            <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+              ↑ 12%
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-cyan-100 to-blue-100 rounded-xl flex items-center justify-center">
+              <div className="w-6 h-6 bg-cyan-500 rounded-full flex items-center justify-center">
+                <span className="text-xs font-bold text-white">时</span>
+              </div>
+            </div>
+            <div className="flex-1">
+              <p className="text-xs text-gray-500">平均使用时长</p>
+              <p className="text-xl font-bold text-gray-900">{additionalStats.avgSessionTime}</p>
+            </div>
+            <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+              ↑ 5%
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 系统健康状态 */}
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+        <div className="p-5 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">系统健康状态</h3>
+                <p className="text-sm text-gray-500">实时监控与运行指标</p>
+              </div>
+            </div>
+            <div className="px-3 py-1 bg-green-100 text-green-700 text-sm font-medium rounded-full">
+              {systemHealth.status}
+            </div>
+          </div>
+        </div>
+        
+        <div className="p-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs text-gray-500 mb-1">运行时间</p>
+              <p className="text-lg font-bold text-gray-900">{systemHealth.uptime}</p>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs text-gray-500 mb-1">响应时间</p>
+              <p className="text-lg font-bold text-gray-900">{systemHealth.responseTime}</p>
+            </div>
+          </div>
+          
+          <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
+            <span>最后检查：{systemHealth.lastCheck}</span>
+            <span>下次检查：5分钟后</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 近期活动卡片 */}
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+        <div className="p-5 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">近期活动</h3>
+                <p className="text-sm text-gray-500">最新的用户活动记录</p>
+              </div>
+            </div>
+            <div className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+              实时更新
+            </div>
+          </div>
+        </div>
+        
+        <div className="divide-y divide-gray-100">
+          {recentActivities.map((activity) => (
+            <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 bg-${activity.color}-50 rounded-xl flex items-center justify-center`}>
+                  <span className="text-lg">{activity.icon}</span>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-gray-900">{activity.user}</span>
+                    <span className="text-xs text-gray-500">{activity.time}</span>
+                  </div>
+                  <p className="text-sm text-gray-700 mt-1">{activity.action}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="p-4 border-t border-gray-100">
+          <div className="text-center">
+            <button className="text-sm text-blue-600 hover:text-blue-800 font-medium">
+              查看所有活动记录 →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 更新 StatCard 组件以支持更多功能
+function StatCard({ title, value, icon, bgColor, iconBgColor, description, change, changeType }) {
+  const changeColor = changeType === 'positive' ? 'text-green-600 bg-green-50' :
+                     changeType === 'negative' ? 'text-red-600 bg-red-50' :
+                     'text-gray-600 bg-gray-50';
+  
+  const changeIcon = changeType === 'positive' ? '↑' :
+                    changeType === 'negative' ? '↓' : '→';
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className={`w-12 h-12 ${iconBgColor} rounded-xl flex items-center justify-center`}>
+            <div className={`w-10 h-10 ${bgColor} rounded-lg flex items-center justify-center`}>
+              {icon}
+            </div>
+          </div>
+          
+          {change && (
+            <div className={`text-xs font-medium px-2 py-1 rounded-full ${changeColor}`}>
+              {changeIcon} {change}
+            </div>
+          )}
+        </div>
+        
+        <div>
+          <p className="text-sm text-gray-500 mb-1">{title}</p>
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            {description && (
+              <p className="text-xs text-gray-500">{description}</p>
+            )}
+          </div>
+        </div>
+        
+        {/* 进度条或趋势指示器 */}
+        <div className="mt-3">
+          <div className="w-full bg-gray-100 rounded-full h-1.5">
+            <div 
+              className={`h-1.5 rounded-full ${bgColor.split(' ')[0]}`}
+              style={{ width: `${Math.min((value || 0) * 5, 100)}%` }}
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// 量表数据页面组件 - 优化版
+function ScalesTab({ scales, loading }) {
+  if (loading) return <div className="text-center py-10 text-gray-500">加载中...</div>;
+  
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 space-y-6">
+      {/* 标题区域 */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+              <BarChart3 className="text-blue-600" size={24} />
+            </div>
+            <div>
+              <h2 className="font-bold text-xl text-gray-900">量表数据</h2>
+              <p className="text-sm text-gray-500">用户提交的量表评估结果</p>
+            </div>
+          </div>
+          <div className="bg-gray-100 px-3 py-1 rounded-full">
+            <span className="text-sm font-medium text-gray-700">{scales.length} 条</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 量表数据列表 */}
+      <div className="space-y-4">
+        {scales.length > 0 ? scales.map((scale) => {
+          // 确定风险等级样式
+          const riskConfig = {
+            high: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100', label: '高风险' },
+            medium: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-100', label: '中风险' },
+            low: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100', label: '低风险' }
+          };
+          const config = riskConfig[scale.riskLevel] || riskConfig.low;
+          
+          return (
+            <div key={scale._id || scale.username + scale.submittedAt} 
+                 className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+              {/* 卡片头部 */}
+              <div className="p-5 border-b border-gray-100">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                      <Users className="text-purple-600" size={18} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{scale.username}</h3>
+                      <p className="text-xs text-gray-500">{scale.scaleName}</p>
+                    </div>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full ${config.bg} ${config.text} border ${config.border} text-xs font-medium`}>
+                    {config.label}
+                  </div>
+                </div>
+                
+                {/* 总分显示 */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500 mb-1">总分</p>
+                    <div className="flex items-center gap-2">
+                      <div className="w-full bg-gray-100 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full ${
+                            scale.riskLevel === 'high' ? 'bg-red-500' :
+                            scale.riskLevel === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min((scale.totalScore || 0) * 2, 100)}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-lg font-bold text-gray-900">{scale.totalScore || 0}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 卡片底部 */}
+              <div className="p-4 bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-xs text-gray-600">
+                      {new Date(scale.submittedAt).toLocaleString('zh-CN', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <button className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                    查看详情
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }) : (
+          <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <BarChart3 className="w-10 h-10 text-gray-400" />
+            </div>
+            <p className="text-gray-700 font-medium mb-2">暂无量表数据</p>
+            <p className="text-gray-500 text-sm">用户提交量表后，数据将在此显示</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 高危预警页面组件 - 优化版
+function HighRiskTab({ highRisk, loading }) {
+  if (loading) return <div className="text-center py-10 text-gray-500">加载中...</div>;
+  
+  const allHighRisk = [...highRisk.scales, ...highRisk.analytics];
+  
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 space-y-6">
+      {/* 标题区域 */}
+      <div className="bg-gradient-to-r from-red-50 to-orange-50 rounded-2xl shadow-sm p-5 border border-red-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
+              <AlertTriangle className="text-red-600" size={24} />
+            </div>
+            <div>
+              <h2 className="font-bold text-xl text-gray-900">高危预警</h2>
+              <p className="text-sm text-red-600 font-medium">需要特别关注的风险用户</p>
+            </div>
+          </div>
+          <div className="bg-red-100 px-3 py-1 rounded-full">
+            <span className="text-sm font-medium text-red-700">{allHighRisk.length} 条预警</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 预警列表 */}
+      <div className="space-y-4">
+        {allHighRisk.length > 0 ? allHighRisk.map((risk, index) => (
+          <div key={index} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-red-100">
+            {/* 预警级别标识 */}
+            <div className="bg-gradient-to-r from-red-600 to-orange-500 h-2"></div>
+            
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center">
+                    <AlertTriangle className="text-red-600" size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{risk.username || risk.user || '未知用户'}</h3>
+                    <p className="text-xs text-gray-500">{risk.source || '量表评估'}</p>
+                  </div>
+                </div>
+                <div className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                  高风险
+                </div>
+              </div>
+              
+              {/* 预警详情 */}
+              <div className="bg-red-50 rounded-xl p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-800 font-medium mb-1">风险详情</p>
+                    <p className="text-sm text-gray-700">{risk.details || risk.note || '无详细信息'}</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 底部信息 */}
+              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-xs text-gray-600">
+                      {risk.createdAt ? new Date(risk.createdAt).toLocaleString('zh-CN', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      }) : '未知时间'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors">
+                    标记处理
+                  </button>
+                  <button className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200 transition-colors">
+                    查看用户
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )) : (
+          <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-10 h-10 text-green-600" />
+            </div>
+            <p className="text-gray-700 font-medium mb-2">暂无高危预警</p>
+            <p className="text-gray-500 text-sm">当前没有需要特别关注的高风险用户</p>
+            <div className="mt-4 inline-flex items-center gap-2 text-green-600 text-sm">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+              </svg>
+              系统运行正常
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 统计信息卡片 */}
+      {allHighRisk.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h4 className="font-medium text-gray-900 mb-4">风险统计</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-red-50 rounded-xl p-4">
+              <p className="text-xs text-red-600 mb-1">高风险用户</p>
+              <p className="text-2xl font-bold text-gray-900">{allHighRisk.length}</p>
+            </div>
+            <div className="bg-orange-50 rounded-xl p-4">
+              <p className="text-xs text-orange-600 mb-1">主要来源</p>
+              <p className="text-lg font-medium text-gray-900">量表评估</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

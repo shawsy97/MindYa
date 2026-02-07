@@ -19,6 +19,8 @@ import { listScales } from "./scales/scaleBank";
 import ScaleRunner from "./scales/scaleRunner.jsx";
 import { listTasks } from "./tasks/taskBank";
 import TaskRunner from "./tasks/TaskRunner";
+import AdminLogin from './admin/AdminLogin';
+import AdminDashboard from './admin/AdminDashboard';
 
 // --- 模拟配置文件 ---
 const CONFIG = {
@@ -55,10 +57,11 @@ const apiPost = async (path, body) => {
 
 // --- 主要组件 ---
 export default function MindYaApp() {
-  const [view, setView] = useState('splash'); // splash, welcome, onboarding, login, register, profile, main
+  const [view, setView] = useState('splash'); // splash, welcome, onboarding, login, register, profile, main, admin-login, admin-dashboard
   const [user, setUser] = useState({ age: '', grade: '', gender: '', riskLevel: 'low' });
   const [currentUser, setCurrentUser] = useState('');
   const [messages, setMessages] = useState([]);
+  const [admin, setAdmin] = useState(null);
 
   // 1. 加载动画 [cite: 28]
   useEffect(() => {
@@ -80,9 +83,10 @@ export default function MindYaApp() {
             onLogin={async (username, password) => {
               await apiPost('/api/login', { username, password });
               setCurrentUser(username);
-              setView('main');
+              setView('profile');
             }}
             onRegister={() => setView('register')}
+            onAdminLogin={() => setView('admin-login')}
           />
         );
       case 'register':
@@ -107,6 +111,8 @@ export default function MindYaApp() {
           />
         );
       case 'main': return <MainInterface user={user} username={currentUser} messages={messages} setMessages={setMessages} />;
+      case 'admin-login': return <AdminLogin onLogin={(adminData) => { setAdmin(adminData); setView('admin-dashboard'); }} />;
+      case 'admin-dashboard': return <AdminDashboard admin={admin} onLogout={() => { setAdmin(null); setView('login'); }} />;
       default: return <SplashScreen />;
     }
   };
@@ -253,7 +259,7 @@ function OnboardingScreen({ onComplete }) {
   );
 }
 
-function LoginScreen({ onLogin, onRegister }) {
+function LoginScreen({ onLogin, onRegister, onAdminLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -322,6 +328,13 @@ function LoginScreen({ onLogin, onRegister }) {
         className="mt-6 text-center text-xs text-[#A89A8E]"
       >
         还没有账号？<span className="text-[#D56B4B]">去注册</span>
+      </button>
+      
+      <button
+        onClick={onAdminLogin}
+        className="mt-4 text-center text-xs text-[#A89A8E]"
+      >
+        <span className="text-[#D56B4B]">管理员登录</span>
       </button>
     </div>
   );

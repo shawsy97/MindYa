@@ -1,0 +1,410 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Users, 
+  TrendingUp, 
+  AlertTriangle, 
+  BarChart3, 
+  MessageCircle,
+  Home,
+  LogOut
+} from 'lucide-react';
+import logoImg from '../assets/logo.png';
+import ConversationsTab from './ConversationsTab';
+import ConversationDetail from './ConversationDetail';
+
+export default function AdminDashboard({ admin, onLogout }) {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [data, setData] = useState({
+    users: [],
+    scales: [],
+    highRisk: { scales: [], analytics: [] },
+    conversations: []
+  });
+  const [loading, setLoading] = useState(true);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+
+  // 获取数据
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        
+        const usersRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/users`);
+        const usersData = await usersRes.json();
+        
+        const scalesRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/scales`);
+        const scalesData = await scalesRes.json();
+        
+        const highRiskRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/high-risk-students`);
+        const highRiskData = await highRiskRes.json();
+        
+        const conversationsRes = await fetch(`${import.meta.env.VITE_API_BASE || ''}/api/admin/conversations`);
+        const conversationsData = await conversationsRes.json();
+        
+        setData({
+          users: usersData,
+          scales: scalesData,
+          highRisk: highRiskData,
+          conversations: conversationsData
+        });
+      } catch (error) {
+        console.error('获取数据失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // 计算统计数据
+  const stats = {
+    totalStudents: data.users.filter(u => u.role === 'student').length,
+    activeStudents: data.users.filter(u => 
+      u.profile && 
+      new Date(u.lastLoginAt) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    ).length,
+    totalScales: data.scales.length,
+    highRiskCount: data.highRisk.scales.length
+  };
+
+  // 渲染内容区域
+  const renderContent = () => {
+    if (selectedConversation) {
+      return <ConversationDetail 
+        conversation={selectedConversation} 
+        onBack={() => setSelectedConversation(null)} 
+      />;
+    }
+    
+    switch(activeTab) {
+      case 'overview':
+        return <OverviewTab stats={stats} />;
+      case 'students':
+        return <StudentsTab users={data.users} loading={loading} />;
+      case 'scales':
+        return <ScalesTab scales={data.scales} loading={loading} />;
+      case 'conversations':
+        return <ConversationsTab 
+          loading={loading} 
+          conversations={data.conversations} 
+          onSelectConversation={setSelectedConversation} 
+        />;
+      case 'highRisk':
+        return <HighRiskTab highRisk={data.highRisk} loading={loading} />;
+      default:
+        return <OverviewTab stats={stats} />;
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-gray-50 max-w-md mx-auto"> {/* 限制最大宽度为移动端 */}
+      {/* 顶部导航栏 */}
+      <div className="bg-white px-4 py-3 flex items-center justify-between border-b border-gray-200 sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <img src={logoImg} alt="Logo" className="w-8 h-8 rounded-full" />
+          <div>
+            <h2 className="font-semibold text-[#4B3425] text-sm">心芽管理后台</h2>
+            <p className="text-xs text-[#8B7A6A]">管理员: {admin.username}</p>
+          </div>
+        </div>
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-1 text-sm text-[#D56B4B] hover:text-[#D56B4B]/80"
+        >
+          <LogOut size={16} />
+          <span>退出</span>
+        </button>
+      </div>
+
+      {/* 页面标题 - 仅保留一个 */}
+      {!selectedConversation && (
+        <div className="px-4 pt-4 pb-2">
+          <h3 className="text-[#4B3425] font-semibold capitalize text-lg">
+            {activeTab === 'overview' && '数据概览' ||
+              activeTab === 'students' && '学生列表' ||
+              activeTab === 'scales' && '量表数据' ||
+              activeTab === 'conversations' && '对话记录' ||
+              activeTab === 'highRisk' && '高危预警'}
+          </h3>
+        </div>
+      )}
+
+      {/* 主内容区 */}
+      <div className={`flex-1 overflow-y-auto ${selectedConversation ? 'pb-4' : 'pb-16'}`}>
+        <div className="px-4">
+          {renderContent()}
+        </div>
+      </div>
+
+      {/* 移动端底部导航栏 - 固定底部，适应手机宽度 */}
+      {!selectedConversation && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-lg max-w-md mx-auto">
+          <div className="flex justify-around items-center h-16">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'overview' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <Home size={22} />
+              <span className="text-xs mt-1">概览</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('students')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'students' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <Users size={22} />
+              <span className="text-xs mt-1">学生列表</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('scales')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'scales' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <BarChart3 size={22} />
+              <span className="text-xs mt-1">量表数据</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('conversations')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'conversations' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
+            >
+              <MessageCircle size={22} />
+              <span className="text-xs mt-1">对话记录</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('highRisk')}
+              className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'highRisk' ? 'text-[#D56B4B]' : 'text-gray-500'}`}
+            >
+              <AlertTriangle size={22} />
+              <span className="text-xs mt-1">高危预警</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// 概览页面组件
+function OverviewTab({ stats }) {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold text-[#4B3425]">数据概览</h2>
+      
+      {/* 为移动端优化网格布局 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          title="总学生数" 
+          value={stats.totalStudents} 
+          icon={<Users className="text-[#4B342C]" size={24} />}
+          color="bg-white"
+        />
+        <StatCard 
+          title="活跃学生" 
+          value={stats.activeStudents} 
+          icon={<TrendingUp className="text-[#4B342C]" size={24} />}
+          color="bg-white"
+        />
+        <StatCard 
+          title="量表提交数" 
+          value={stats.totalScales} 
+          icon={<BarChart3 className="text-[#4B342C]" size={24} />}
+          color="bg-white"
+        />
+        <StatCard 
+          title="高危预警" 
+          value={stats.highRiskCount} 
+          icon={<AlertTriangle className="text-[#D56B4B]" size={24} />}
+          color="bg-red-50"
+        />
+      </div>
+
+      <div className="bg-white p-4 rounded-xl shadow-sm">
+        <h3 className="font-semibold text-[#4B3425] mb-3">近期活动</h3>
+        <p className="text-[#8B7A6A] text-sm">暂无数据显示</p>
+      </div>
+    </div>
+  );
+}
+
+// StatCard 组件
+function StatCard({ title, value, icon, color }) {
+  return (
+    <div className={`${color} rounded-xl shadow-sm p-4`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[#8B7A6A] text-sm">{title}</p>
+          <p className="text-[#4B3425] text-xl font-bold">{value}</p>
+        </div>
+        <div className="text-[#4B342C]">{icon}</div>
+      </div>
+    </div>
+  );
+}
+
+// 学生列表页面组件
+function StudentsTab({ users, loading }) {
+  if (loading) return <div className="text-center py-10 text-[#8B7A6A]">加载中...</div>;
+  
+  const students = users.filter(u => u.role === 'student');
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <h2 className="text-xl font-bold text-[#4B3425]">学生列表</h2>
+        <p className="text-sm text-[#8B7A6A]">{students.length} 名学生</p>
+      </div>
+      
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        {/* 为移动端优化表格显示 */}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[120px]">用户名</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[80px]">性别</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[80px]">年龄</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[100px]">年级</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[120px]">最后登录</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.length > 0 ? students.map((user, index) => (
+                <tr key={user._id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
+                  <td className="py-3 px-4 text-[#4B3425] max-w-[120px] truncate" title={user.username}>
+                    {user.username}
+                  </td>
+                  <td className="py-3 px-4 text-[#4B3425]">{user.profile?.gender || '-'}</td>
+                  <td className="py-3 px-4 text-[#4B3425]">{user.profile?.age || '-'}</td>
+                  <td className="py-3 px-4 text-[#4B3425]">{user.profile?.grade || '-'}</td>
+                  <td className="py-3 px-4 text-[#8B7A6A] text-sm min-w-[120px]">
+                    {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : '-'}
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="5" className="py-10 text-center text-[#8B7A6A]">暂无学生数据</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 量表数据页面组件
+function ScalesTab({ scales, loading }) {
+  if (loading) return <div className="text-center py-10 text-[#8B7A6A]">加载中...</div>;
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <h2 className="text-xl font-bold text-[#4B3425]">量表数据</h2>
+        <p className="text-sm text-[#8B7A6A]">{scales.length} 条记录</p>
+      </div>
+      
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[120px]">学生</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[150px]">量表名称</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[80px]">总分</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[100px]">风险等级</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[150px]">提交时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scales.length > 0 ? scales.map((scale, index) => (
+                <tr key={scale._id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
+                  <td className="py-3 px-4 text-[#4B3425] max-w-[120px] truncate" title={scale.username}>
+                    {scale.username}
+                  </td>
+                  <td className="py-3 px-4 text-[#4B3425] max-w-[150px] truncate" title={scale.scaleName}>
+                    {scale.scaleName}
+                  </td>
+                  <td className="py-3 px-4 text-[#4B3425]">{scale.totalScore || '-'}</td>
+                  <td className="py-3 px-4">
+                    <span className={`inline-block px-2 py-1 rounded-full text-xs ${
+                      scale.riskLevel === 'high' ? 'bg-red-100 text-red-800' :
+                      scale.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {scale.riskLevel === 'high' ? '高风险' : 
+                       scale.riskLevel === 'medium' ? '中风险' : '低风险'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-[#8B7A6A] text-sm">
+                    {new Date(scale.submittedAt).toLocaleString()}
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="5" className="py-10 text-center text-[#8B7A6A]">暂无量表数据</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 高危学生页面组件
+function HighRiskTab({ highRisk, loading }) {
+  if (loading) return <div className="text-center py-10 text-[#8B7A6A]">加载中...</div>;
+  
+  // 合并来自不同来源的高危学生
+  const allHighRisk = [...highRisk.scales, ...highRisk.analytics];
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <h2 className="text-xl font-bold text-[#4B3425]">高危预警</h2>
+        <p className="text-sm text-[#8B7A6A]">{allHighRisk.length} 条预警</p>
+      </div>
+      
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-red-50">
+              <tr>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[120px]">学生</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[150px]">风险来源</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[100px]">风险等级</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[150px]">发现时间</th>
+                <th className="text-left py-3 px-4 text-[#8B7A6A] font-normal min-w-[200px]">详情</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allHighRisk.length > 0 ? allHighRisk.map((risk, index) => (
+                <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-red-25'}>
+                  <td className="py-3 px-4 text-[#4B3425] max-w-[120px] truncate" title={risk.username || risk.user}>
+                    {risk.username || risk.user || 'N/A'}
+                  </td>
+                  <td className="py-3 px-4 text-[#4B3425]">{risk.source || '量表评估'}</td>
+                  <td className="py-3 px-4">
+                    <span className="inline-block px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                      高风险
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-[#8B7A6A] text-sm">
+                    {risk.createdAt ? new Date(risk.createdAt).toLocaleString() : 'N/A'}
+                  </td>
+                  <td className="py-3 px-4 text-[#4B3425] max-w-[200px] truncate" title={risk.details || risk.note}>
+                    {risk.details || risk.note || 'N/A'}
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="5" className="py-10 text-center text-[#8B7A6A]">暂无高危预警</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,39 @@
+/* 响应式样式 */
+@media (max-width: 768px) {
+  .hidden-lg {
+    display: none;
+  }
+
+  .show-lg {
+    display: block;
+  }
+  
+  /* 调整表格样式 */
+  table {
+    width: 100%;
+  }
+
+  th, td {
+    padding: 0.5rem;
+    font-size: 0.9rem;
+  }
+
+  /* 底部导航栏样式 */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: white;
+    border-top: 1px solid #eaeaea;
+    padding: 0.5rem;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+  }
+
+  .bottom-nav button {
+    flex: 1;
+    margin: 0 0.5rem;
+  }
+}
