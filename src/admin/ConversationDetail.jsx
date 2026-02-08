@@ -21,10 +21,10 @@ function ConversationDetail({ conversation, onBack }) {
       const userName = conversation.username || conversation.user || '未知用户';
       setUsername(userName);
       
-      // 处理消息数据，正确判断角色
+      // 智能识别消息角色
       const processedMessages = messagesData.map((msg, index) => {
-        // 尝试从不同字段确定角色
-        let role;
+        // 首先尝试从已有字段判断角色
+        let role = null;
         
         if (msg.role) {
           role = msg.role;
@@ -34,42 +34,101 @@ function ConversationDetail({ conversation, onBack }) {
           role = msg.sender === 'user' ? 'user' : 'assistant';
         } else if (msg.type) {
           role = msg.type === 'user' ? 'user' : 'assistant';
-        } else {
-          // 如果没有明确的角色标识，根据对话逻辑判断：
-          // 第一个消息通常是AI的欢迎语，然后用户和AI交替
-          role = index === 0 ? 'assistant' : (index % 2 === 1 ? 'user' : 'assistant');
         }
         
-        // 确保AI的消息不会被误判为用户消息
-        // 如果消息内容包含典型的AI欢迎语，则强制设为assistant
+        // 如果没有明确的角色标识，根据内容特征判断
         const content = msg.content || msg.text || msg.message || '';
-        if (content.includes('你好') && content.includes('很高兴') && content.includes('心芽')) {
-          role = 'assistant';
+        if (!role) {
+          // AI消息的特征：包含问候语、心芽、AI等关键词
+          const aiKeywords = ['你好', '很高兴', '心芽', 'AI', '我是', '欢迎', '哈喽', 'hi', 'hello'];
+          const isAIContent = aiKeywords.some(keyword => 
+            content.toLowerCase().includes(keyword.toLowerCase())
+          );
+          
+          // 用户消息的特征：通常是提问、陈述、表达感受
+          const userKeywords = ['我', '你', '吗', '？', '?', '感觉', '心情', '今天'];
+          const isUserContent = userKeywords.some(keyword => 
+            content.includes(keyword)
+          );
+          
+          // 根据长度和内容特征判断
+          if (isAIContent && content.length > 10) {
+            role = 'assistant';
+          } else if (isUserContent) {
+            role = 'user';
+          }
         }
         
         return {
           ...msg,
-          role,
+          role: role || 'user', // 默认为用户消息
           content: content,
           timestamp: msg.timestamp || msg.time || msg.createdAt || new Date().toISOString(),
           id: msg.id || msg._id || `msg-${index}`
         };
       });
       
-      // 再次验证：确保第一个消息是AI（如果不是，尝试调整）
-      if (processedMessages.length > 0 && processedMessages[0].role === 'user') {
-        console.log('检测到第一个消息是用户，尝试重新分配角色...');
-        // 重新分配角色：第一个为AI，然后交替
-        const correctedMessages = processedMessages.map((msg, index) => ({
-          ...msg,
-          role: index % 2 === 0 ? 'assistant' : 'user'
-        }));
-        setMessages(correctedMessages);
-      } else {
-        setMessages(processedMessages);
-      }
+      // 后处理：确保消息交替，并且修复可能的角色错误
+      const correctedMessages = ensureAlternatingRoles(processedMessages);
+      setMessages(correctedMessages);
     }
   }, [conversation]);
+
+  // 确保消息角色交替的函数
+  const ensureAlternatingRoles = (messages) => {
+    if (messages.length === 0) return messages;
+    
+    // 深拷贝消息数组
+    const correctedMessages = [...messages];
+    
+    // 统计每种角色的消息数
+    const aiCount = correctedMessages.filter(m => m.role === 'assistant').length;
+    const userCount = correctedMessages.filter(m => m.role === 'user').length;
+    
+    // 如果AI消息明显多于用户消息，可能AI被误判为首条消息
+    if (aiCount > userCount * 2 && aiCount > 2) {
+      // 重新检查第一条消息，如果看起来像AI消息但用户数很少，可能第一条就是AI
+      console.log('AI消息明显多于用户消息，可能第一条就是AI消息');
+    }
+    
+    // 修复连续的相同角色消息
+    for (let i = 1; i < correctedMessages.length; i++) {
+      const prevRole = correctedMessages[i-1].role;
+      const currentRole = correctedMessages[i].role;
+      
+      // 如果前后消息角色相同，修正当前消息角色
+      if (prevRole === currentRole) {
+        correctedMessages[i].role = prevRole === 'user' ? 'assistant' : 'user';
+        console.log(`修复第 ${i+1} 条消息的角色：${prevRole} → ${correctedMessages[i].role}`);
+      }
+    }
+    
+    // 如果修正后第一条消息是AI，验证是否合理
+    if (correctedMessages[0].role === 'assistant') {
+      const firstContent = correctedMessages[0].content || '';
+      const hasAIIntroduction = firstContent.includes('心芽') || 
+                               firstContent.includes('你好') || 
+                               firstContent.includes('欢迎');
+      
+      // 如果第一条是AI消息但没有AI自我介绍，可能应该是用户消息
+      if (!hasAIIntroduction && correctedMessages.length > 1) {
+        // 检查第二条消息，如果看起来像AI回复第一条，则交换角色
+        const secondContent = correctedMessages[1].content || '';
+        const secondIsAIReply = secondContent.includes('你好') || 
+                               secondContent.includes('很高兴') ||
+                               secondContent.length > 20; // AI回复通常较长
+                               
+        if (secondIsAIReply) {
+          // 交换前两条消息的角色
+          correctedMessages[0].role = 'user';
+          correctedMessages[1].role = 'assistant';
+          console.log('交换前两条消息的角色');
+        }
+      }
+    }
+    
+    return correctedMessages;
+  };
 
   // 滚动到底部
   useEffect(() => {

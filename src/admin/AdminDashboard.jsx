@@ -140,9 +140,9 @@ export default function AdminDashboard({ admin, onLogout }) {
           onSelectConversation={setSelectedConversation}
         />;
       case 'tasks': // 修改：将 highRisk 改为 tasks
-        return <TasksTab 
-          tasks={data.tasks} 
-          loading={loading} 
+        return <TasksTab
+          tasks={data.tasks}
+          loading={loading}
           onSelectTask={setSelectedTask}
         />;
       default:
@@ -208,7 +208,7 @@ export default function AdminDashboard({ admin, onLogout }) {
               <MessageCircle size={22} />
               <span className="text-xs mt-1">对话</span>
             </button>
-             <button
+            <button
               onClick={() => setActiveTab('tasks')} // 修改：将 highRisk 改为 tasks
               className={`flex flex-col items-center justify-center flex-1 h-full ${activeTab === 'tasks' ? 'text-[#9BB05A]' : 'text-gray-500'}`}
             >
@@ -222,13 +222,21 @@ export default function AdminDashboard({ admin, onLogout }) {
   );
 }
 
-// OverviewTab 概览组件 - 完全重写
+// OverviewTab 概览组件 - 修改为竖向布局
 function OverviewTab({ stats, activities, dailyStats }) {
   // 如果没有数据，使用默认值
   const safeStats = stats || {
     users: { total: 0, todayLogin: 0, todayRegister: 0, withProfile: 0 },
     scales: { total: 0, today: 0, byType: {} },
-    tasks: { total: 0, today: 0, byType: {} }
+    tasks: { total: 0, today: 0, byType: {} },
+    conversations: {
+      totalMessages: 0,
+      todayMessages: 0,
+      totalConversations: 0,
+      todayConversations: 0,
+      totalUsers: 0,
+      todayUsers: 0
+    }
   };
 
   const safeActivities = activities || [];
@@ -246,6 +254,7 @@ function OverviewTab({ stats, activities, dailyStats }) {
       default: return <Users className="w-4 h-4" />;
     }
   };
+
   // 获取颜色类
   const getColorClass = (color) => {
     switch (color) {
@@ -276,8 +285,8 @@ function OverviewTab({ stats, activities, dailyStats }) {
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-6">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">数据概览</h2>
 
-      {/* 统计卡片网格布局 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* 统计卡片 - 改为竖向布局 */}
+      <div className="space-y-6">
         {/* 用户统计卡片 */}
         <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
           <div className="flex items-center justify-between mb-4">
@@ -296,18 +305,27 @@ function OverviewTab({ stats, activities, dailyStats }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">总用户</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.users.total}</div>
+          {/* 将内部网格改为竖向布局 */}
+          <div className="space-y-4 mb-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">总用户</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.users.total}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">今日登录</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.users.todayLogin}</div>
+              </div>
             </div>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">今日登录</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.users.todayLogin}</div>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">今日注册</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.users.todayRegister}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">今日注册</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.users.todayRegister}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">资料完善</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.users.withProfile}</div>
+              </div>
             </div>
           </div>
 
@@ -324,7 +342,73 @@ function OverviewTab({ stats, activities, dailyStats }) {
             </div>
           </div>
         </div>
+        {/* 对话统计卡片 */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-amber-100 to-orange-100 rounded-xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">对话统计</h3>
+                <p className="text-sm text-gray-500">AI聊天会话情况</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-gray-500">今日新增</div>
+              <div className="text-lg font-bold text-green-600">
+                +{safeStats.conversations?.todayConversations || 0}
+              </div>
+            </div>
+          </div>
 
+          {/* 将内部网格改为竖向布局 */}
+          <div className="space-y-4 mb-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">总会话数</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.conversations?.totalConversations || 0}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">今日会话数</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.conversations?.todayConversations || 0}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">总消息数</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.conversations?.totalMessages || 0}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">今日消息数</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.conversations?.todayMessages || 0}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-2">
+            <div className="flex justify-between text-xs text-gray-600 mb-1">
+              <span>会话活跃率</span>
+              <span>
+                {safeStats.conversations?.totalConversations > 0
+                  ? Math.round(((safeStats.conversations?.todayConversations || 0) / safeStats.conversations.totalConversations) * 100)
+                  : 0}%
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-gradient-to-r from-amber-500 to-orange-500 h-2 rounded-full transition-all duration-500"
+                style={{
+                  width: `${safeStats.conversations?.totalConversations > 0
+                    ? Math.min(Math.round(((safeStats.conversations?.todayConversations || 0) / safeStats.conversations.totalConversations) * 100), 100)
+                    : 0}%`
+                }}
+              ></div>
+            </div>
+          </div>
+        </div>
         {/* 量表统计卡片 */}
         <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
           <div className="flex items-center justify-between mb-4">
@@ -343,18 +427,27 @@ function OverviewTab({ stats, activities, dailyStats }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">总量表</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.scales.total}</div>
+          {/* 将内部网格改为竖向布局 */}
+          <div className="space-y-4 mb-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">总量表</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.scales.total}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">今日新增</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.scales.today}</div>
+              </div>
             </div>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">DASS-21</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.scales.byType?.DASS21 || 0}</div>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">PHQ-9</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.scales.byType?.PHQ9_CHILD || 0}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">DASS-21</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.scales.byType?.DASS21 || 0}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">PHQ-9</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.scales.byType?.PHQ9_CHILD || 0}</div>
+              </div>
             </div>
           </div>
 
@@ -393,18 +486,27 @@ function OverviewTab({ stats, activities, dailyStats }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">总游戏</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.tasks.total}</div>
+          {/* 将内部网格改为竖向布局 */}
+          <div className="space-y-4 mb-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">总游戏</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.tasks.total}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">今日新增</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.tasks.today}</div>
+              </div>
             </div>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">CPT-X</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.tasks.byType?.CPT_X || 0}</div>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <div className="text-sm text-gray-600 mb-1">其他</div>
-              <div className="text-2xl font-bold text-gray-900">{safeStats.tasks.byType?.OTHER || 0}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">CPT-X</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.tasks.byType?.CPT_X || 0}</div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">其他</div>
+                <div className="text-2xl font-bold text-gray-900">{safeStats.tasks.byType?.OTHER || 0}</div>
+              </div>
             </div>
           </div>
 
@@ -424,44 +526,104 @@ function OverviewTab({ stats, activities, dailyStats }) {
       </div>
 
       {/* 趋势图表 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-6">
         {/* 最近7天趋势 */}
         <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
           <h3 className="font-semibold text-gray-900 mb-4">最近7天趋势</h3>
           <div className="h-64">
             {safeDailyStats.length > 0 ? (
-              <div className="flex items-end justify-between h-48 gap-2">
-                {safeDailyStats.map((day, index) => {
-                  const maxValue = Math.max(
-                    ...safeDailyStats.map(d => Math.max(d.users, d.scales, d.tasks))
-                  );
-                  const scale = maxValue > 0 ? 150 / maxValue : 0;
+              <div className="relative">
+                {/* Y轴数值标签（左侧） */}
+                <div className="absolute left-0 top-0 bottom-10 w-8 flex flex-col justify-between items-start text-xs text-gray-500">
+                  <div className="text-right w-full">
+                    {(() => {
+                      const maxValue = Math.max(
+                        ...safeDailyStats.map(d => Math.max(d.users || 0, d.scales || 0, d.tasks || 0, d.conversations || 0))
+                      );
+                      return maxValue > 0 ? maxValue : 100;
+                    })()}
+                  </div>
+                  <div>0</div>
+                </div>
 
-                  return (
-                    <div key={index} className="flex flex-col items-center flex-1">
-                      <div className="text-xs text-gray-500 mb-1">
-                        {new Date(day.date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                {/* 柱状图主体 */}
+                <div className="ml-8 flex items-end justify-between h-48 gap-1">
+                  {safeDailyStats.map((day, index) => {
+                    const maxValue = Math.max(
+                      ...safeDailyStats.map(d => Math.max(d.users || 0, d.scales || 0, d.tasks || 0, d.conversations || 0))
+                    );
+                    const scale = maxValue > 0 ? 150 / maxValue : 0;
+
+                    return (
+                      <div key={index} className="flex flex-col items-center flex-1 h-full">
+                        {/* 柱子容器 */}
+                        <div className="flex items-end justify-center w-full gap-0.5 mb-2 flex-1">
+                          <div
+                            className="w-1/4 bg-gradient-to-t from-blue-500 to-cyan-500 rounded-t relative group"
+                            style={{ height: `${(day.users || 0) * scale}px` }}
+                            title={`用户活动: ${day.users || 0}`}
+                          >
+                            {(day.users || 0) > 0 && (
+                              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-semibold text-blue-700">
+                                {day.users || 0}
+                              </div>
+                            )}
+                            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                              用户
+                            </div>
+                          </div>
+                          <div
+                            className="w-1/4 bg-gradient-to-t from-purple-500 to-pink-500 rounded-t relative group"
+                            style={{ height: `${(day.scales || 0) * scale}px` }}
+                            title={`量表提交: ${day.scales || 0}`}
+                          >
+                            {(day.scales || 0) > 0 && (
+                              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-semibold text-purple-700">
+                                {day.scales || 0}
+                              </div>
+                            )}
+                            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                              量表
+                            </div>
+                          </div>
+                          <div
+                            className="w-1/4 bg-gradient-to-t from-green-500 to-emerald-500 rounded-t relative group"
+                            style={{ height: `${(day.tasks || 0) * scale}px` }}
+                            title={`游戏完成: ${day.tasks || 0}`}
+                          >
+                            {(day.tasks || 0) > 0 && (
+                              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-semibold text-green-700">
+                                {day.tasks || 0}
+                              </div>
+                            )}
+                            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs text-green-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                              游戏
+                            </div>
+                          </div>
+                          <div
+                            className="w-1/4 bg-gradient-to-t from-amber-500 to-orange-500 rounded-t relative group"
+                            style={{ height: `${(day.conversations || 0) * scale}px` }}
+                            title={`AI对话: ${day.conversations || 0}`}
+                          >
+                            {(day.conversations || 0) > 0 && (
+                              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-semibold text-amber-700">
+                                {day.conversations || 0}
+                              </div>
+                            )}
+                            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                              对话
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* X轴日期标签 - 放在柱状图下方 */}
+                        <div className="text-xs text-gray-500 mt-2 text-center w-full border-t border-gray-200 pt-1">
+                          {new Date(day.date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                        </div>
                       </div>
-                      <div className="flex items-end justify-center w-full gap-1 mb-2">
-                        <div
-                          className="w-1/3 bg-gradient-to-t from-blue-500 to-cyan-500 rounded-t"
-                          style={{ height: `${day.users * scale}px` }}
-                          title={`用户: ${day.users}`}
-                        ></div>
-                        <div
-                          className="w-1/3 bg-gradient-to-t from-purple-500 to-pink-500 rounded-t"
-                          style={{ height: `${day.scales * scale}px` }}
-                          title={`量表: ${day.scales}`}
-                        ></div>
-                        <div
-                          className="w-1/3 bg-gradient-to-t from-green-500 to-emerald-500 rounded-t"
-                          style={{ height: `${day.tasks * scale}px` }}
-                          title={`游戏: ${day.tasks}`}
-                        ></div>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-500">
@@ -472,8 +634,8 @@ function OverviewTab({ stats, activities, dailyStats }) {
               </div>
             )}
 
-            {/* 图例 */}
-            <div className="flex justify-center gap-6 mt-4">
+            {/* 图例 - 添加对话图例 */}
+            <div className="flex flex-wrap justify-center gap-4 mt-6">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-cyan-500 rounded"></div>
                 <span className="text-xs text-gray-600">用户活动</span>
@@ -485,6 +647,10 @@ function OverviewTab({ stats, activities, dailyStats }) {
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 bg-gradient-to-r from-green-500 to-emerald-500 rounded"></div>
                 <span className="text-xs text-gray-600">游戏完成</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-gradient-to-r from-amber-500 to-orange-500 rounded"></div>
+                <span className="text-xs text-gray-600">AI对话</span>
               </div>
             </div>
           </div>
@@ -546,7 +712,7 @@ function OverviewTab({ stats, activities, dailyStats }) {
 
       {/* 系统状态卡片 */}
       <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-2xl p-6 border border-blue-100">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center">
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -566,7 +732,7 @@ function OverviewTab({ stats, activities, dailyStats }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+        <div className="grid grid-cols-2 gap-4 mt-6">
           <div className="bg-white/80 p-3 rounded-lg border border-blue-100">
             <div className="text-xs text-gray-600">API响应</div>
             <div className="text-lg font-bold text-gray-900">正常</div>
@@ -581,7 +747,7 @@ function OverviewTab({ stats, activities, dailyStats }) {
           </div>
           <div className="bg-white/80 p-3 rounded-lg border border-blue-100">
             <div className="text-xs text-gray-600">存储空间</div>
-            <div className="text-lg font-bold text-gray-90">充足</div>
+            <div className="text-lg font-bold text-gray-900">充足</div>
           </div>
         </div>
       </div>
@@ -682,7 +848,27 @@ function UsersTab({ users, loading, onSelectUser }) {
   };
 
   return (
+
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-6">
+      {/* 标题区域 */}
+      <div className="bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-2xl flex items-center justify-center shadow-sm">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5 0h-15" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="font-bold text-xl text-gray-900">用户列表</h2>
+              <p className="text-sm text-gray-500">所有注册的用户信息</p>
+            </div>
+          </div>
+          <div className="bg-gradient-to-r from-blue-500 to-cyan-500 px-4 py-2 rounded-full shadow-sm">
+            <span className="text-sm font-medium text-white">{filteredUsers.length} 名用户</span>
+          </div>
+        </div>
+      </div>
       {/* 统计卡片 */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100">
@@ -728,25 +914,7 @@ function UsersTab({ users, loading, onSelectUser }) {
         </div>
       </div>
 
-      {/* 标题区域 */}
-      <div className="bg-white rounded-2xl shadow-lg p-5 border border-gray-100">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-2xl flex items-center justify-center shadow-sm">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5 0h-15" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="font-bold text-xl text-gray-900">用户列表</h2>
-              <p className="text-sm text-gray-500">所有注册的用户信息</p>
-            </div>
-          </div>
-          <div className="bg-gradient-to-r from-blue-500 to-cyan-500 px-4 py-2 rounded-full shadow-sm">
-            <span className="text-sm font-medium text-white">{filteredUsers.length} 名用户</span>
-          </div>
-        </div>
-      </div>
+
 
       {/* 用户列表 */}
       <div className="space-y-4">
@@ -1094,7 +1262,7 @@ function ScalesTab({ scales, loading, onSelectScale }) {
 // TasksTab组件 (替换原来的HighRiskTab)
 function TasksTab({ tasks, loading, onSelectTask }) {
   if (loading) return <div className="text-center py-10 text-gray-500">加载中...</div>;
-  
+
   // 获取游戏性能颜色
   const getPerformanceColor = (score) => {
     if (score >= 80) return { bg: 'from-green-500 to-emerald-500', text: 'text-green-700', label: '优秀' };
@@ -1102,7 +1270,7 @@ function TasksTab({ tasks, loading, onSelectTask }) {
     if (score >= 40) return { bg: 'from-orange-500 to-red-500', text: 'text-orange-700', label: '一般' };
     return { bg: 'from-red-500 to-pink-500', text: 'text-red-700', label: '需练习' };
   };
-  
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-6">
       {/* 标题区域 */}
@@ -1128,10 +1296,10 @@ function TasksTab({ tasks, loading, onSelectTask }) {
         {tasks.length > 0 ? tasks.map((task) => {
           const performanceScore = task.performanceScore || 0;
           const perfConfig = getPerformanceColor(performanceScore);
-          
+
           return (
-            <div 
-              key={task._id || task.username + task.submittedAt} 
+            <div
+              key={task._id || task.username + task.submittedAt}
               onClick={() => onSelectTask?.(task._id)}
               className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 hover:border-purple-300 hover:shadow-lg transition-all duration-200 cursor-pointer group"
             >
@@ -1151,7 +1319,7 @@ function TasksTab({ tasks, loading, onSelectTask }) {
                     {perfConfig.label}
                   </div>
                 </div>
-                
+
                 {/* 性能指标 */}
                 <div className="grid grid-cols-3 gap-3 mb-3">
                   <div className="bg-gray-50 p-2 rounded-lg">
@@ -1173,7 +1341,7 @@ function TasksTab({ tasks, loading, onSelectTask }) {
                     </p>
                   </div>
                 </div>
-                
+
                 {/* 性能进度条 */}
                 <div className="mb-1">
                   <div className="flex justify-between text-xs text-gray-600 mb-1">
@@ -1182,14 +1350,14 @@ function TasksTab({ tasks, loading, onSelectTask }) {
                     <span>100</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div 
+                    <div
                       className={`h-2 rounded-full bg-gradient-to-r ${perfConfig.bg}`}
                       style={{ width: `${performanceScore}%` }}
                     ></div>
                   </div>
                 </div>
               </div>
-              
+
               {/* 卡片底部 */}
               <div className="p-4 bg-gray-50">
                 <div className="flex items-center justify-between">
@@ -1232,7 +1400,7 @@ function TasksTab({ tasks, loading, onSelectTask }) {
           </div>
         )}
       </div>
-      
+
       {/* 底部提示 */}
       {tasks.length > 0 && (
         <div className="text-center pt-4">

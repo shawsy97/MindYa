@@ -5,6 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require('bcryptjs');
 
+require('dotenv').config(); // ← 加载 .env 文件
+
 // 始终使用文件存储模式，不连接数据库
 const dbConnected = false;
 console.log("系统将以文件存储模式运行，数据将存储在本地文件中");
@@ -99,10 +101,10 @@ const parseCsvLine = (line) => {
   const result = [];
   let current = "";
   let inQuotes = false;
-  
+
   // 先去除行尾的 \r
   line = line.replace(/\r$/, '');
-  
+
   for (let i = 0; i < line.length; i += 1) {
     const char = line[i];
     if (char === '"') {
@@ -129,7 +131,7 @@ const parseCsvLine = (line) => {
 const parseCsv = (raw) => {
   const lines = raw.trimEnd().split("\n").filter(Boolean);
   if (lines.length === 0) return { header: [], rows: [] };
-  
+
   // 清理标题行，去除 \r
   const header = parseCsvLine(lines[0]).map(h => h.replace(/\r/g, '').trim());
   const rows = lines.slice(1).map((line) => {
@@ -687,6 +689,10 @@ app.post("/api/log", async (req, res) => {
 });
 
 app.post("/api/chat", async (req, res) => {
+  console.log("🚀 DASHSCOPE_API_KEY loaded:", process.env.DASHSCOPE_API_KEY ? "YES" : "MISSING!");
+  if (process.env.DASHSCOPE_API_KEY) {
+    console.log("🔑 Key prefix:", process.env.DASHSCOPE_API_KEY.substring(0, 8));
+  }
   try {
     const chatStart = Date.now();
     const { messages, userProfile, role } = req.body;
@@ -868,7 +874,64 @@ app.get("/api/admin/overview/stats", async (req, res) => {
       }).length,
       withProfile: userProfiles.length
     };
+    // 对话统计数据
+    const conversationStats = {
+      totalMessages: 0,          // 总消息数
+      todayMessages: 0,          // 当天消息数
+      totalConversations: 0,     // 总会话数
+      todayConversations: 0,     // 当天会话数
+      totalUsers: 0,             // 总聊天用户数
+      todayUsers: 0              // 当天聊天用户数
+    };
 
+    // 计算对话统计
+    try {
+      // 读取对话数据
+      const conversationsData = readConversations();
+      const today = new Date().toISOString().split('T')[0];
+      const userSet = new Set();      // 总聊天用户集合
+      const todayUserSet = new Set(); // 当天聊天用户集合
+
+      // 遍历所有对话
+      for (const [username, userConversations] of Object.entries(conversationsData)) {
+        if (Array.isArray(userConversations)) {
+          userSet.add(username); // 添加用户到集合
+
+          for (const conversation of userConversations) {
+            if (conversation && conversation.messages) {
+              const messageCount = conversation.messages.length || 0;
+              conversationStats.totalMessages += messageCount;
+              conversationStats.totalConversations += 1;
+
+              // 判断是否为当天对话
+              let isToday = false;
+              if (conversation.updatedAt) {
+                const convoDate = new Date(conversation.updatedAt).toISOString().split('T')[0];
+                isToday = convoDate === today;
+              } else if (conversation.messages && conversation.messages.length > 0) {
+                // 使用最后一条消息的时间
+                const lastMsg = conversation.messages[conversation.messages.length - 1];
+                if (lastMsg.timestamp) {
+                  const convoDate = new Date(lastMsg.timestamp).toISOString().split('T')[0];
+                  isToday = convoDate === today;
+                }
+              }
+
+              if (isToday) {
+                conversationStats.todayMessages += messageCount;
+                conversationStats.todayConversations += 1;
+                todayUserSet.add(username);
+              }
+            }
+          }
+        }
+      }
+
+      conversationStats.totalUsers = userSet.size;
+      conversationStats.todayUsers = todayUserSet.size;
+    } catch (error) {
+      console.error('计算对话统计出错:', error);
+    }
     // 量表统计数据
     const scaleStats = {
       total: scaleResults.filter(r => r.type === 'scale').length,
@@ -992,6 +1055,7 @@ app.get("/api/admin/overview/stats", async (req, res) => {
 
     return res.json({
       users: userStats,
+      conversations: conversationStats,  // 添加对话统计
       scales: scaleStats,
       tasks: taskStats,
       dailyStats,
@@ -1009,30 +1073,30 @@ app.get("/api/admin/overview/activities", async (req, res) => {
   try {
     console.log('开始读取活动日志...');
     console.log('日志文件路径:', logsPath);
-    
+
     // 检查日志文件是否存在
     if (!fs.existsSync(logsPath)) {
       console.log('日志文件不存在，创建空文件');
       fs.writeFileSync(logsPath, "username,action,detail,createdAt\n", "utf-8");
     }
-    
+
     // 读取活动日志
     const logsContent = fs.readFileSync(logsPath, 'utf-8');
     console.log('日志文件内容长度:', logsContent.length);
-    
+
     if (logsContent.trim() === '' || logsContent.trim() === 'username,action,detail,createdAt') {
       console.log('日志文件为空或只有标题行');
       return res.json([]);
     }
-    
+
     // 使用修复后的parseCsv函数
     const logs = parseCsv(logsContent);
     console.log('解析后的日志行数:', logs.rows.length);
-    
+
     if (logs.rows.length > 0) {
       console.log('第一条日志(已清理):', logs.rows[0]);
     }
-    
+
     // 安全地获取日期函数
     const getDateFromString = (dateString) => {
       try {
@@ -1047,17 +1111,17 @@ app.get("/api/admin/overview/activities", async (req, res) => {
         return null;
       }
     };
-    
+
     // 格式化活动数据
     const activities = logs.rows.map(log => {
       let detail = '';
       let icon = 'User';
       let color = 'blue';
-      
+
       // 安全地获取时间
       const logDate = getDateFromString(log.createdAt);
       const timeAgo = logDate ? getTimeAgo(log.createdAt) : '未知时间';
-      
+
       // 解析日志详情
       try {
         if (log.action === 'register') {
@@ -1075,7 +1139,7 @@ app.get("/api/admin/overview/activities", async (req, res) => {
             if (parsedDetail.gender) profileInfo.push(`性别: ${parsedDetail.gender}`);
             if (parsedDetail.age) profileInfo.push(`年龄: ${parsedDetail.age}`);
             if (parsedDetail.grade) profileInfo.push(`年级: ${parsedDetail.grade}`);
-            
+
             detail = `用户 ${log.username} 更新了个人资料${profileInfo.length > 0 ? ` (${profileInfo.join(', ')})` : ''}`;
           } catch {
             detail = `用户 ${log.username} 更新了个人资料`;
@@ -1097,9 +1161,9 @@ app.get("/api/admin/overview/activities", async (req, res) => {
           // 游戏日志：只显示基本信息，不显示详细数据
           try {
             const taskData = JSON.parse(log.detail);
-            const taskName = taskData.taskId === 'CPT_X' ? '注意力测试(CPT-X)' : 
-                            taskData.taskId === 'cpt' ? '注意力测试' : 
-                            taskData.taskId || '认知训练游戏';
+            const taskName = taskData.taskId === 'CPT_X' ? '注意力测试(CPT-X)' :
+              taskData.taskId === 'cpt' ? '注意力测试' :
+                taskData.taskId || '认知训练游戏';
             detail = `用户 ${log.username} 完成了 ${taskName}`;
           } catch {
             detail = `用户 ${log.username} 完成了一个认知训练游戏`;
@@ -1117,7 +1181,7 @@ app.get("/api/admin/overview/activities", async (req, res) => {
         icon = 'Activity';
         color = 'gray';
       }
-      
+
       return {
         id: `${log.username}_${log.createdAt}`,
         username: log.username,
@@ -1129,10 +1193,10 @@ app.get("/api/admin/overview/activities", async (req, res) => {
         timeAgo
       };
     })
-    .filter(activity => activity.timeAgo !== '未知时间') // 过滤掉时间无效的活动
-    .slice(-20) // 只取最近20条
-    .reverse(); // 按时间倒序排列（最新的在前面）
-    
+      .filter(activity => activity.timeAgo !== '未知时间') // 过滤掉时间无效的活动
+      .slice(-20) // 只取最近20条
+      .reverse(); // 按时间倒序排列（最新的在前面）
+
     console.log('返回的活动数量:', activities.length);
     return res.json(activities);
   } catch (error) {
@@ -1147,13 +1211,13 @@ function getTimeAgo(timestamp) {
     if (!timestamp || timestamp.trim() === '') {
       return '未知时间';
     }
-    
+
     // 清理时间戳中的 \r
     timestamp = timestamp.replace(/\r/g, '').trim();
-    
+
     const now = new Date();
     const date = new Date(timestamp);
-    
+
     if (isNaN(date.getTime())) {
       // 尝试其他日期格式
       const timestampWithoutMs = timestamp.split('.')[0];
@@ -1164,12 +1228,12 @@ function getTimeAgo(timestamp) {
       }
       date = date2;
     }
-    
+
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
+
     if (diffMins < 1) return '刚刚';
     if (diffMins < 60) return `${diffMins}分钟前`;
     if (diffHours < 24) return `${diffHours}小时前`;
@@ -1190,7 +1254,7 @@ app.get("/api/admin/tasks", async (req, res) => {
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
     const tasks = [];
-    
+
     for (let i = 1; i < lines.length; i++) { // 跳过标题行
       const values = parseCsvLine(lines[i]);
       if (values.length >= 4 && values[1] === 'task') { // 只获取游戏数据
@@ -1203,9 +1267,9 @@ app.get("/api/admin/tasks", async (req, res) => {
           if (dataStr.startsWith('"') && dataStr.endsWith('"')) {
             dataStr = dataStr.slice(1, -1);
           }
-          
+
           const parsedData = JSON.parse(dataStr);
-          
+
           // 构建task对象
           const task = {
             _id: i,
@@ -1213,7 +1277,7 @@ app.get("/api/admin/tasks", async (req, res) => {
             submittedAt: values[3],
             taskData: parsedData
           };
-          
+
           // 添加任务基本信息
           if (parsedData.taskId) {
             task.taskId = parsedData.taskId;
@@ -1222,7 +1286,7 @@ app.get("/api/admin/tasks", async (req, res) => {
             task.taskId = 'Unknown';
             task.taskName = '未知游戏';
           }
-          
+
           // 获取摘要信息
           if (parsedData.summary) {
             task.summary = parsedData.summary;
@@ -1230,10 +1294,10 @@ app.get("/api/admin/tasks", async (req, res) => {
             task.meanRT = parsedData.summary.meanRT || 0;
             task.performanceScore = calculatePerformanceScore(parsedData.summary);
           }
-          
+
           // 保存完整的数据用于详情显示
           task.fullData = parsedData;
-          
+
           tasks.push(task);
         } catch (e) {
           console.error('解析游戏数据失败:', e.message, '行数据:', values[2]);
@@ -1241,7 +1305,7 @@ app.get("/api/admin/tasks", async (req, res) => {
         }
       }
     }
-    
+
     return res.json(tasks);
   } catch (error) {
     console.error('Get tasks error:', error);
@@ -1253,20 +1317,20 @@ app.get("/api/admin/tasks", async (req, res) => {
 app.get("/api/admin/task/:id", async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);
-    
+
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
-    
+
     if (taskId <= 0 || taskId >= lines.length) {
       return res.status(404).json({ error: '游戏记录不存在' });
     }
-    
+
     const values = parseCsvLine(lines[taskId]);
-    
+
     if (values.length < 4 || values[1] !== 'task') {
       return res.status(404).json({ error: '不是有效的游戏记录' });
     }
-    
+
     try {
       // 解析JSON数据
       let dataStr = values[2];
@@ -1274,38 +1338,38 @@ app.get("/api/admin/task/:id", async (req, res) => {
       if (dataStr.startsWith('"') && dataStr.endsWith('"')) {
         dataStr = dataStr.slice(1, -1);
       }
-      
+
       const parsedData = JSON.parse(dataStr);
-      
+
       const task = {
         _id: taskId,
         username: values[0],
         submittedAt: values[3],
         fullData: parsedData
       };
-      
+
       // 添加任务基本信息
       if (parsedData.taskId) {
         task.taskId = parsedData.taskId;
         task.taskName = getTaskName(parsedData.taskId);
       }
-      
+
       // 获取摘要信息
       if (parsedData.summary) {
         task.summary = parsedData.summary;
         task.performanceScore = calculatePerformanceScore(parsedData.summary);
       }
-      
+
       // 获取配置信息
       if (parsedData.config) {
         task.config = parsedData.config;
       }
-      
+
       // 获取试次数据
       if (parsedData.trials) {
         task.trials = parsedData.trials;
       }
-      
+
       return res.json(task);
     } catch (e) {
       console.error('解析游戏详情失败:', e.message);
@@ -1326,27 +1390,27 @@ function getTaskName(taskId) {
     'WCST': 'WCST 卡片分类任务',
     'NBACK': '工作记忆任务（N-back）'
   };
-  
+
   return taskNames[taskId] || taskId;
 }
 
 // 辅助函数：计算性能得分
 function calculatePerformanceScore(summary) {
   if (!summary) return 0;
-  
+
   let score = 0;
-  
+
   // 准确率贡献（0-50分）
   if (summary.accuracy !== undefined) {
     score += summary.accuracy * 50;
   }
-  
+
   // 命中数贡献（0-20分）
   if (summary.hits !== undefined && summary.n !== undefined) {
     const hitRate = summary.n > 0 ? summary.hits / summary.n : 0;
     score += hitRate * 20;
   }
-  
+
   // 反应时间贡献（0-30分）
   if (summary.meanRT !== undefined) {
     // 假设理想反应时间是400ms，越接近得分越高
@@ -1355,6 +1419,6 @@ function calculatePerformanceScore(summary) {
     const rtScore = Math.max(0, 30 - (rtDiff / 10));
     score += rtScore;
   }
-  
+
   return Math.min(Math.round(score), 100);
 }
