@@ -5,7 +5,7 @@ const envApiBase = import.meta.env.VITE_API_BASE || "";
 const API_BASE =
   envApiBase ||
   (typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    ? `${window.location.protocol}//${window.location.hostname}:8080`
     : "");
 
 const apiPost = async (path, body) => {

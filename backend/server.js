@@ -13,7 +13,7 @@ console.log("系统将以文件存储模式运行，数据将存储在本地文�
 let User, Profile, Scale, Conversation, Task, Admin, Analytics, Log;
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = 8080;
 
 const corsOptions = {
   origin: true,
