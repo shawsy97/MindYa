@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Lock, User, LogIn, Shield, Eye, EyeOff } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
-export default function AdminLogin({ onLogin }) {
+export default function AdminLogin({ onLogin, onBackToLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -77,7 +77,17 @@ export default function AdminLogin({ onLogin }) {
         {/* 登录卡片 */}
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
           {/* 卡片头部 */}
-          <div className="p-8 bg-gradient-to-r from-blue-600 to-indigo-700">
+          <div className="p-8 bg-gradient-to-r from-blue-600 to-indigo-700 relative">
+            {/* 返回按钮 */}
+            <button
+              onClick={onBackToLogin}
+              className="absolute top-4 right-4 flex items-center gap-1 px-3 py-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors duration-200 text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              返回普通用户登录
+            </button>
             <div className="flex flex-col items-center text-center text-white">
               <div className="relative">
                 <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center mb-4">
@@ -89,6 +99,7 @@ export default function AdminLogin({ onLogin }) {
               </div>
               <h1 className="text-2xl font-bold mt-4">心芽管理后台</h1>
               <p className="text-blue-100 text-sm mt-2">管理员安全登录系统</p>
+              
             </div>
           </div>
 
@@ -208,22 +219,7 @@ export default function AdminLogin({ onLogin }) {
               </button>
             </form>
 
-            {/* 登录提示 */}
-            <div className="mt-8 pt-6 border-t border-gray-200">
-              <div className="text-center">
-                <p className="text-sm text-gray-600 mb-3">登录提示：</p>
-                <div className="space-y-2 text-xs text-gray-500">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span>默认账号：</span>
-                  </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span>默认密码：</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            
           </div>
         </div>
 

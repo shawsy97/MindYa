@@ -111,8 +111,15 @@ export default function MindYaApp() {
           />
         );
       case 'main': return <MainInterface user={user} username={currentUser} messages={messages} setMessages={setMessages} />;
-      case 'admin-login': return <AdminLogin onLogin={(adminData) => { setAdmin(adminData); setView('admin-dashboard'); }} />;
       case 'admin-dashboard': return <AdminDashboard admin={admin} onLogout={() => { setAdmin(null); setView('login'); }} />;
+      case 'admin-login':
+        return <AdminLogin
+          onLogin={(adminData) => {
+            setAdmin(adminData);
+            setView('admin-dashboard');
+          }}
+          onBackToLogin={() => setView('login')}  // 确保这行存在
+        />;
       default: return <SplashScreen />;
     }
   };
@@ -329,13 +336,19 @@ function LoginScreen({ onLogin, onRegister, onAdminLogin }) {
       >
         还没有账号？<span className="text-[#D56B4B]">去注册</span>
       </button>
-      
-      <button
-        onClick={onAdminLogin}
-        className="mt-4 text-center text-xs text-[#A89A8E]"
-      >
-        <span className="text-[#D56B4B]">管理员登录</span>
-      </button>
+
+      {/* 这里是修改的部分 - 管理员按钮 */}
+      <div className="mt-auto pt-4">
+        <button
+          onClick={onAdminLogin}
+          className="ml-auto flex items-center gap-2 rounded-full bg-[#4B342C] px-4 py-2 text-xs text-white shadow-md hover:bg-[#3A2922]"
+        >
+          <span>管理员登录</span>
+          <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
@@ -453,17 +466,15 @@ function ProfileScreen({ onComplete }) {
           <h3 className="text-lg font-semibold text-[#4B3425]">你的性别？</h3>
           <button
             onClick={() => setFormData({ ...formData, gender: '男生' })}
-            className={`w-full overflow-hidden rounded-2xl border ${
-              formData.gender === '男生' ? 'border-[#4B342C] bg-white' : 'border-[#E5DED6] bg-[#FBF9F7]'
-            }`}
+            className={`w-full overflow-hidden rounded-2xl border ${formData.gender === '男生' ? 'border-[#4B342C] bg-white' : 'border-[#E5DED6] bg-[#FBF9F7]'
+              }`}
           >
             <img src={maleImg} alt="我是男生" className="w-full h-full object-cover" />
           </button>
           <button
             onClick={() => setFormData({ ...formData, gender: '女生' })}
-            className={`w-full overflow-hidden rounded-2xl border ${
-              formData.gender === '女生' ? 'border-[#4B342C] bg-white' : 'border-[#E5DED6] bg-[#FBF9F7]'
-            }`}
+            className={`w-full overflow-hidden rounded-2xl border ${formData.gender === '女生' ? 'border-[#4B342C] bg-white' : 'border-[#E5DED6] bg-[#FBF9F7]'
+              }`}
           >
             <img
               src={femaleImg}
@@ -504,9 +515,8 @@ function ProfileScreen({ onComplete }) {
               {ageOptions.map((age) => (
                 <div
                   key={age}
-                  className={`h-12 snap-center flex items-center justify-center text-3xl font-semibold ${
-                    formData.age === age ? 'text-white' : 'text-[#C9C0B6]'
-                  }`}
+                  className={`h-12 snap-center flex items-center justify-center text-3xl font-semibold ${formData.age === age ? 'text-white' : 'text-[#C9C0B6]'
+                    }`}
                 >
                   {age}
                 </div>
@@ -525,9 +535,8 @@ function ProfileScreen({ onComplete }) {
               <button
                 key={grade}
                 onClick={() => setFormData({ ...formData, grade })}
-                className={`w-full rounded-2xl border px-4 py-3 text-left ${
-                  formData.grade === grade ? 'border-[#4B342C] bg-[#9BB05A] text-white' : 'border-[#E5DED6] bg-white text-[#4B3425]'
-                }`}
+                className={`w-full rounded-2xl border px-4 py-3 text-left ${formData.grade === grade ? 'border-[#4B342C] bg-[#9BB05A] text-white' : 'border-[#E5DED6] bg-white text-[#4B3425]'
+                  }`}
               >
                 {grade}
               </button>
@@ -575,7 +584,7 @@ function MainInterface({ user, username }) {
     setMessages([]); // 清空当前消息界面
     setCurrentConvId(Date.now().toString()); // 生成新ID
     setMenuOpen(false); // 关闭侧边栏
-    
+
     // 初始化第一句话（调用你之前的自然开场白逻辑）
     const prompt = buildInitialPrompt();
     try {
@@ -591,7 +600,7 @@ function MainInterface({ user, username }) {
       const data = await resp.json();
       const aiMsg = { id: Date.now(), text: data.text, sender: 'ai' };
       setMessages([aiMsg]);
-      
+
       // 自动保存这个新开场的预览到历史记录
       await saveToHistory([aiMsg]);
     } catch (e) { console.error(e); }
@@ -723,14 +732,14 @@ function MainInterface({ user, username }) {
           <div className="absolute inset-0 bg-[#4B3425]/20" onClick={() => setMenuOpen(false)} />
           <div className="absolute left-4 top-14 w-64 rounded-2xl bg-[#F7F2EA] p-4 shadow-lg">
             {/* 点击开启新聊天 */}
-            <button 
+            <button
               onClick={startNewChat}
               className="w-full flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-[#4B3425] hover:bg-gray-50 transition"
             >
               <span className="h-6 w-6 rounded-full bg-[#9BB05A] inline-flex items-center justify-center text-white">+</span>
               新聊天
             </button>
-            
+
             <div className="mt-4 text-sm text-[#8B7A6A]">历史聊天</div>
             <div className="mt-2 space-y-2 overflow-y-auto max-h-60">
               {historyList.length > 0 ? (
@@ -738,9 +747,8 @@ function MainInterface({ user, username }) {
                   <button
                     key={conv.id}
                     onClick={() => loadHistory(conv)}
-                    className={`w-full text-left rounded-xl px-3 py-2 text-sm transition ${
-                      currentConvId === conv.id ? 'bg-[#9BB05A] text-white' : 'bg-white text-[#4B3425]'
-                    }`}
+                    className={`w-full text-left rounded-xl px-3 py-2 text-sm transition ${currentConvId === conv.id ? 'bg-[#9BB05A] text-white' : 'bg-white text-[#4B3425]'
+                      }`}
                   >
                     {conv.preview || "新对话"}
                   </button>
@@ -777,7 +785,7 @@ function MainInterface({ user, username }) {
             <div ref={scrollRef} />
           </div>
         )}
-        
+
         {activeTab === 'scale' && <ScaleHub username={username} user={user} />}
         {activeTab === 'games' && <GamesHub username={username} />}
       </div>
@@ -785,7 +793,7 @@ function MainInterface({ user, username }) {
       {/* 底部输入框或导航 [cite: 70] */}
       {activeTab === 'chat' && (
         <div className="p-4 bg-white border-t border-gray-100 flex gap-2">
-          <input 
+          <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="说点什么吧..."
@@ -798,10 +806,10 @@ function MainInterface({ user, username }) {
       )}
 
       <nav className="bg-white border-t border-gray-100 flex justify-around py-3">
-        <NavBtn icon={<MessageCircle/>} label="聊天" active={activeTab==='chat'} onClick={()=>setActiveTab('chat')} activeColor="text-[#4B342C]" />
-        <NavBtn icon={<BookOpen/>} label="测测" active={activeTab==='scale'} onClick={()=>setActiveTab('scale')} activeColor="text-[#4B342C]" />
-        <NavBtn icon={<Gamepad2/>} label="游戏" active={activeTab==='games'&& <GamesHub username={username} />} onClick={()=>setActiveTab('games')} activeColor="text-[#4B342C]" />
-        <NavBtn icon={<LayoutGrid/>} label="更多" active={activeTab==='more'} onClick={()=>setActiveTab('more')} activeColor="text-[#4B342C]" />
+        <NavBtn icon={<MessageCircle />} label="聊天" active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} activeColor="text-[#4B342C]" />
+        <NavBtn icon={<BookOpen />} label="测测" active={activeTab === 'scale'} onClick={() => setActiveTab('scale')} activeColor="text-[#4B342C]" />
+        <NavBtn icon={<Gamepad2 />} label="游戏" active={activeTab === 'games' && <GamesHub username={username} />} onClick={() => setActiveTab('games')} activeColor="text-[#4B342C]" />
+        <NavBtn icon={<LayoutGrid />} label="更多" active={activeTab === 'more'} onClick={() => setActiveTab('more')} activeColor="text-[#4B342C]" />
       </nav>
     </div>
   );
