@@ -24,7 +24,22 @@ const apiPost = async (path, body) => {
   return data;
 };
 
-export default function ScaleRunner({ username, scaleId, onBack }) {
+const resolveIntroImage = (imageName) => {
+  if (!imageName) return "";
+  return new URL(`../assets/${imageName}`, import.meta.url).href;
+};
+
+export default function ScaleRunner({
+  username,
+  scaleId,
+  onBack,
+  backLabel = "← 返回列表",
+  onComplete,
+  completeLabel = "继续下一份 →",
+  autoAdvance = false,
+  themeBg,
+  themeTextColor,
+}) {
   const scale = useMemo(() => getScale(scaleId), [scaleId]);
   const [answers, setAnswers] = useState({});
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -39,6 +54,12 @@ export default function ScaleRunner({ username, scaleId, onBack }) {
     setErr("");
     setShowIntro(Boolean(scale?.intro));
   }, [scaleId, scale?.intro]);
+
+  useEffect(() => {
+    if (scale?.items?.length && currentIndex >= scale.items.length) {
+      setCurrentIndex(0);
+    }
+  }, [scaleId, scale?.items?.length, currentIndex]);
 
   const setAnswer = (key, value) => {
     setAnswers((prev) => ({ ...prev, [key]: value }));
@@ -61,6 +82,10 @@ export default function ScaleRunner({ username, scaleId, onBack }) {
         data: payload,
       });
 
+      if (autoAdvance && onComplete) {
+        onComplete(payload);
+        return;
+      }
       setResult(payload);
     } catch (e) {
       setErr(e?.message || "提交失败");
@@ -73,7 +98,7 @@ export default function ScaleRunner({ username, scaleId, onBack }) {
       <div className="space-y-3">
         {onBack ? (
           <button onClick={onBack} className="text-sm text-[#8B7A6A]">
-            ← 返回列表
+            {backLabel}
           </button>
         ) : null}
 
@@ -91,27 +116,47 @@ export default function ScaleRunner({ username, scaleId, onBack }) {
             </div>
           )}
         </div>
+
+        {onComplete ? (
+          <button
+            onClick={onComplete}
+            className="w-full rounded-full bg-[#4B342C] text-white py-3 font-semibold"
+          >
+            {completeLabel}
+          </button>
+        ) : null}
       </div>
     );
   }
 
   if (showIntro && scale?.intro) {
-    const { title, paragraphs = [], note } = scale.intro;
+    const { title, paragraphs = [], note, prompt } = scale.intro;
+    const introImage = resolveIntroImage(scale.intro.image);
     return (
       <div className="space-y-3">
         {onBack ? (
           <button onClick={onBack} className="text-sm text-[#8B7A6A]">
-            ← 返回列表
+            {backLabel}
           </button>
         ) : null}
 
         <div className="rounded-2xl bg-white border border-[#EFE7DE] p-4 shadow-sm space-y-3">
           <div className="text-[#4B3425] font-semibold">{title || scale.name}</div>
+          {prompt ? (
+            <div className="text-sm text-[#6C5B50]">{prompt}</div>
+          ) : null}
           <div className="space-y-2 text-sm text-[#4B3425]">
             {paragraphs.map((p, i) => (
               <div key={i}>{p}</div>
             ))}
           </div>
+          {introImage ? (
+            <img
+              src={introImage}
+              alt=""
+              className="w-full rounded-xl border border-[#EFE7DE]"
+            />
+          ) : null}
           {note ? (
             <div className="text-xs text-[#8B7A6A]">{note}</div>
           ) : null}
@@ -127,8 +172,17 @@ export default function ScaleRunner({ username, scaleId, onBack }) {
     );
   }
 
+  if (!scale?.items?.length) {
+    return (
+      <div className="text-sm text-[#8B7A6A]">
+        量表内容加载中…
+      </div>
+    );
+  }
+
   const total = scale.items.length;
-  const currentItem = scale.items[currentIndex];
+  const safeIndex = Math.min(currentIndex, total - 1);
+  const currentItem = scale.items[safeIndex];
   const currentValue = answers[currentItem.key];
   const unansweredCount = scale.items.filter((it) => answers[it.key] === undefined).length;
   const canSubmit = unansweredCount === 0;
@@ -142,10 +196,17 @@ export default function ScaleRunner({ username, scaleId, onBack }) {
   };
 
   return (
-    <div className="space-y-3">
+    <div
+      className={`space-y-3 ${themeBg ? "rounded-[28px] p-5 min-h-[560px]" : ""}`}
+      style={themeBg ? { backgroundColor: themeBg, color: themeTextColor } : undefined}
+    >
       {onBack ? (
-        <button onClick={onBack} className="text-sm text-[#8B7A6A]">
-          ← 返回列表
+        <button
+          onClick={onBack}
+          className="text-sm"
+          style={themeTextColor ? { color: themeTextColor } : { color: "#8B7A6A" }}
+        >
+          {backLabel}
         </button>
       ) : null}
 

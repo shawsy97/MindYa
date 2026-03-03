@@ -15,7 +15,13 @@ import onboard2Img from './assets/onboard2.png';
 import onboard3Img from './assets/onboard3.png';
 import maleImg from './assets/male.png';
 import femaleImg from './assets/female.png';
-import { listScales } from "./scales/scaleBank";
+import growthMapImg from './assets/growth-map.png';
+import courageSceneImg from './assets/theme-courage-mountain.png';
+import emotionSceneImg from './assets/theme-emotion-forest.png';
+import stressSceneImg from './assets/theme-stress-sea.png';
+import confidenceSceneImg from './assets/theme-confidence-garden.png';
+import sleepSceneImg from './assets/theme-sleep-planet.png';
+import { getScale } from "./scales/scaleBank";
 import ScaleRunner from "./scales/scaleRunner.jsx";
 import { listTasks } from "./tasks/taskBank";
 import TaskRunner from "./tasks/TaskRunner";
@@ -807,7 +813,7 @@ function MainInterface({ user, username }) {
 
       <nav className="bg-white border-t border-gray-100 flex justify-around py-3">
         <NavBtn icon={<MessageCircle />} label="聊天" active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} activeColor="text-[#4B342C]" />
-        <NavBtn icon={<BookOpen />} label="测测" active={activeTab === 'scale'} onClick={() => setActiveTab('scale')} activeColor="text-[#4B342C]" />
+        <NavBtn icon={<BookOpen />} label="成长探索" active={activeTab === 'scale'} onClick={() => setActiveTab('scale')} activeColor="text-[#4B342C]" />
         <NavBtn icon={<Gamepad2 />} label="游戏" active={activeTab === 'games' && <GamesHub username={username} />} onClick={() => setActiveTab('games')} activeColor="text-[#4B342C]" />
         <NavBtn icon={<LayoutGrid />} label="更多" active={activeTab === 'more'} onClick={() => setActiveTab('more')} activeColor="text-[#4B342C]" />
       </nav>
@@ -826,29 +832,310 @@ function NavBtn({ icon, label, active, onClick, activeColor = 'text-emerald-600'
 
 // --- 量表 ---
 function ScaleHub({ username, user }) {
-  const [selectedId, setSelectedId] = useState(null);
+  const [view, setView] = useState("map");
+  const [activeZoneId, setActiveZoneId] = useState("emotion_forest");
+  const [currentScaleIndex, setCurrentScaleIndex] = useState(0);
+  const [themeResults, setThemeResults] = useState({});
   const ageText = String(user?.age ?? "");
   const numericAge = Number.parseInt(ageText.replace(/[^\d]/g, ""), 10);
 
-  if (!selectedId) {
-    const scales = listScales(Number.isNaN(numericAge) ? null : numericAge);
-    return (
-      <div className="space-y-3">
-        <div className="text-[#4B3425] font-semibold text-lg">心情自测</div>
-        <div className="text-xs text-[#8B7A6A]">选择一个量表开始</div>
+  const zones = [
+    {
+      id: "courage_mountain",
+      label: "勇气山",
+      scaleIds: ["ERQ"],
+      position: { top: "15%", left: "8%" },
+      theme: {
+        title: "勇气山",
+        bgColor: "#6A8D6F",
+        textColor: "#3E2B22",
+        sceneImg: courageSceneImg,
+        bubbleText: "小狐狸遇到难过的事情，会换个角度想想。你也是吗？",
+        tagline: "你遇到问题，会换个角度想想吗？",
+        ctaText: "登山看看 →",
+        bubbleStyle: { top: "30%", left: "44%", width: "46%" },
+      },
+    },
+    {
+      id: "sleep_planet",
+      label: "睡眠星球",
+      scaleIds: ["SRSS"],
+      position: { top: "18%", right: "8%" },
+      theme: {
+        title: "睡眠星球",
+        bgColor: "#FED694",
+        textColor: "#3E2B22",
+        sceneImg: sleepSceneImg,
+        bubbleText: "小猫最近懒懒的，它想看看是不是该早点休息。",
+        tagline: "睡眠会影响白天的状态。",
+        ctaText: "看看星空 →",
+        bubbleStyle: { top: "44%", left: "12%", width: "60%" },
+      },
+    },
+    {
+      id: "emotion_forest",
+      label: "情绪森林",
+      scaleIds: ["DASS21", "ANHEDONIA"],
+      position: { top: "38%", left: "10%" },
+      theme: {
+        title: "情绪森林",
+        bgColor: "#7EA76C",
+        textColor: "#3E2B22",
+        sceneImg: emotionSceneImg,
+        bubbleText: "熊熊有点没精神，它想知道你最近感觉怎么样。",
+        tagline: "一起看看最近的心情状态吧。",
+        ctaText: "开始探索 →",
+        bubbleStyle: { top: "36%", left: "44%", width: "50%" },
+      },
+    },
+    {
+      id: "confidence_garden",
+      label: "自信花园",
+      scaleIds: ["BULLYING"],
+      position: { top: "56%", left: "28%" },
+      theme: {
+        title: "自信花园",
+        bgColor: "#E6AAA4",
+        textColor: "#3E2B22",
+        sceneImg: confidenceSceneImg,
+        bubbleText: "小鹿在人群中有时会紧张，有时也会很自信。",
+        tagline: "你最近的感受呢？",
+        ctaText: "走进花园 →",
+        bubbleStyle: { top: "42%", left: "10%", width: "56%" },
+      },
+    },
+    {
+      id: "stress_sea",
+      label: "逐浪学海",
+      scaleIds: ["ACADEMIC_BURNOUT", "SCHOOL_AVERSION"],
+      position: { bottom: "10%", left: "30%" },
+      theme: {
+        title: "逐浪学海",
+        bgColor: "#5B7A8D",
+        textColor: "#F7F2EA",
+        sceneImg: stressSceneImg,
+        bubbleText: "小海龟最近觉得背有点重，它想知道是不是有点累了。",
+        tagline: "学习和生活都会有起伏。",
+        ctaText: "看看海面 →",
+        bubbleStyle: { top: "30%", left: "48%", width: "50%" },
+      },
+    },
+  ];
 
-        <div className="space-y-3">
-          {scales.map((s) => (
+  const activeZone = zones.find((z) => z.id === activeZoneId) || zones[0];
+  const isScaleAllowed = (scale) => {
+    if (!scale.ageRange || Number.isNaN(numericAge)) return true;
+    return numericAge >= scale.ageRange.min && numericAge <= scale.ageRange.max;
+  };
+  const allowedScaleIds = activeZone.scaleIds.filter((id) =>
+    isScaleAllowed(getScale(id))
+  );
+
+  const recordResult = (payload) => {
+    if (!payload?.scaleId) return;
+    setThemeResults((prev) => ({ ...prev, [payload.scaleId]: payload }));
+  };
+
+  const resetTheme = () => {
+    setCurrentScaleIndex(0);
+    setThemeResults({});
+  };
+
+  const colorByRisk = (risk) => {
+    if (risk === "high") return "bg-[#D56B4B] text-white";
+    if (risk === "medium") return "bg-[#DFA15A] text-white";
+    return "bg-[#9BB05A] text-white";
+  };
+
+  const getDASSLevel = (score) => {
+    if (score <= 9) return "normal";
+    if (score <= 13) return "mild";
+    if (score <= 20) return "moderate";
+    if (score <= 27) return "severe";
+    return "extreme";
+  };
+
+  const getDASSAnxLevel = (score) => {
+    if (score <= 7) return "normal";
+    if (score <= 9) return "mild";
+    if (score <= 14) return "moderate";
+    if (score <= 19) return "severe";
+    return "extreme";
+  };
+
+  const getDASSStressLevel = (score) => {
+    if (score <= 14) return "normal";
+    if (score <= 18) return "mild";
+    if (score <= 25) return "moderate";
+    if (score <= 33) return "severe";
+    return "extreme";
+  };
+
+  const renderSummary = () => {
+    if (activeZone.id === "emotion_forest") {
+      const dass = themeResults.DASS21;
+      const anhedonia = themeResults.ANHEDONIA;
+      const dep = dass?.score?.depression ?? 0;
+      const anx = dass?.score?.anxiety ?? 0;
+      const stress = dass?.score?.stress ?? 0;
+      const maxTier = Math.max(
+        ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSLevel(dep)),
+        ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSAnxLevel(anx)),
+        ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSStressLevel(stress))
+      );
+      const anhedoniaTier = anhedonia?.level?.tier;
+      let risk = "low";
+      let title = "今天的森林是多云转晴 🌤";
+      let desc = "整体状态比较平稳。\n偶尔的小波动是正常的。";
+      if (maxTier >= 2 || anhedoniaTier === "轻度波动") {
+        risk = "medium";
+        title = "森林里有些小雨 🌧";
+        desc = "最近可能有些压力或疲惫。\n给自己一点时间。";
+      }
+      if (maxTier >= 3 || anhedoniaTier === "持续低落") {
+        risk = "high";
+        title = "森林最近有些持续阴天 🌫";
+        desc = "如果这种状态持续了一段时间，\n可以考虑和信任的人聊聊。";
+      }
+      return (
+        <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
+          <div className={`inline-flex px-3 py-1 rounded-full text-xs ${colorByRisk(risk)}`}>
+            情绪森林
+          </div>
+          <div className="text-[#4B3425] font-semibold">{title}</div>
+          <div className="text-sm text-[#6C5B50] whitespace-pre-line">{desc}</div>
+          {risk === "high" ? (
+            <button className="mt-2 text-sm text-[#4B3425] underline">
+              查看更多支持方式
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (activeZone.id === "stress_sea") {
+      const burnout = themeResults.ACADEMIC_BURNOUT;
+      const aversion = themeResults.SCHOOL_AVERSION;
+      const burnoutMean = burnout?.score?.mean ?? 0;
+      const aversionMean = aversion?.score?.mean ?? 0;
+      let risk = "low";
+      let title = "海面比较平静 🌊";
+      let desc = "最近的学习节奏还算稳定。";
+      if (burnoutMean >= 3 || aversionMean >= 3) {
+        risk = "medium";
+        title = "海面有些浪 🌊";
+        desc = "最近可能有点忙或担心。";
+      }
+      if (burnoutMean >= 4 || aversionMean >= 4) {
+        risk = "high";
+        title = "最近的浪有点高 🌪";
+        desc = "也许可以调整一下节奏，\n压力不需要一个人承担。";
+      }
+      return (
+        <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
+          <div className={`inline-flex px-3 py-1 rounded-full text-xs ${colorByRisk(risk)}`}>
+            压力海
+          </div>
+          <div className="text-[#4B3425] font-semibold">{title}</div>
+          <div className="text-sm text-[#6C5B50] whitespace-pre-line">{desc}</div>
+        </div>
+      );
+    }
+
+    if (activeZone.id === "confidence_garden") {
+      const bullying = themeResults.BULLYING;
+      const hasConcern = Boolean(bullying?.flags?.hasConcern);
+      const risk = hasConcern ? "medium" : "low";
+      const title = hasConcern ? "花园有些地方需要浇水 🌱" : "花园正在生长 🌼";
+      const desc = hasConcern
+        ? "如果和同学相处有些不舒服，\n可以找老师或家人聊聊。"
+        : "你在人群中有自己的位置。";
+      return (
+        <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
+          <div className={`inline-flex px-3 py-1 rounded-full text-xs ${colorByRisk(risk)}`}>
+            自信花园
+          </div>
+          <div className="text-[#4B3425] font-semibold">{title}</div>
+          <div className="text-sm text-[#6C5B50] whitespace-pre-line">{desc}</div>
+        </div>
+      );
+    }
+
+    if (activeZone.id === "sleep_planet") {
+      const sleep = themeResults.SRSS;
+      const total = sleep?.score?.total ?? 0;
+      let risk = "low";
+      let title = "星空清晰 🌌";
+      let desc = "最近入睡或精力恢复情况比较稳定。";
+      if (total >= 23 && total < 30) {
+        risk = "medium";
+        title = "星空有些云层 ☁";
+        desc = "最近入睡或恢复情况可能有些波动。";
+      }
+      if (total >= 30) {
+        risk = "high";
+        title = "星空云层偏厚 ☁";
+        desc = "睡眠可能有点被打扰，\n可以试着调整作息。";
+      }
+      return (
+        <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
+          <div className={`inline-flex px-3 py-1 rounded-full text-xs ${colorByRisk(risk)}`}>
+            睡眠星球
+          </div>
+          <div className="text-[#4B3425] font-semibold">{title}</div>
+          <div className="text-sm text-[#6C5B50] whitespace-pre-line">{desc}</div>
+        </div>
+      );
+    }
+
+    if (activeZone.id === "courage_mountain") {
+      const erq = themeResults.ERQ;
+      const summary = erq?.level?.summary;
+      const strategy = erq?.level?.strategy;
+      let title = "背包整理得很稳 🧭";
+      let desc = summary || "你有自己的调节方式，可以慢慢找到适合的节奏。";
+      let risk = "low";
+      if (strategy === "更偏向表达抑制") {
+        risk = "medium";
+        title = "背包有点闷 🧳";
+      }
+      if (strategy === "更偏向认知重评") {
+        title = "背包更轻一些 🎒";
+      }
+      return (
+        <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
+          <div className={`inline-flex px-3 py-1 rounded-full text-xs ${colorByRisk(risk)}`}>
+            勇气山
+          </div>
+          <div className="text-[#4B3425] font-semibold">{title}</div>
+          <div className="text-sm text-[#6C5B50] whitespace-pre-line">{desc}</div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  if (view === "map") {
+    return (
+      <div className="space-y-4 rounded-[28px] bg-[#F7EEC9] p-5 min-h-[560px]">
+        <div className="text-[#5A4332] font-semibold text-lg">成长探索</div>
+        <div className="text-xs text-[#8B7A6A]">点击地图标签，进入对应主题</div>
+
+        <div className="relative w-full max-w-[380px] mx-auto">
+          <img src={growthMapImg} alt="成长探索地图" className="w-full h-auto" />
+          {zones.map((zone) => (
             <button
-              key={s.id}
-              onClick={() => setSelectedId(s.id)}
-              className="w-full text-left rounded-2xl bg-white border border-[#EFE7DE] p-4 shadow-sm"
+              key={zone.id}
+              onClick={() => {
+                setActiveZoneId(zone.id);
+                resetTheme();
+                setView("intro");
+              }}
+              className="absolute rounded-full px-4 py-2 text-sm font-semibold shadow-md bg-[#4B3425] text-white"
+              style={zone.position}
             >
-              <div className="flex items-center justify-between">
-                <div className="text-[#4B3425] font-semibold">{s.name}</div>
-                <div className="text-[#D56B4B] text-sm">进入 →</div>
-              </div>
-              <div className="mt-1 text-xs text-[#8B7A6A]">时间范围：{s.period}</div>
+              {zone.label}
             </button>
           ))}
         </div>
@@ -856,11 +1143,104 @@ function ScaleHub({ username, user }) {
     );
   }
 
+  if (view === "intro") {
+    const { theme } = activeZone;
+    const canStart = allowedScaleIds.length > 0;
+    return (
+      <div
+        className="rounded-[28px] p-5 min-h-[560px] flex flex-col items-center text-center"
+        style={{ backgroundColor: theme.bgColor, color: theme.textColor }}
+      >
+        <div className="w-full flex items-center gap-2">
+          <button
+            onClick={() => setView("map")}
+            className="h-9 w-9 rounded-full border text-lg flex items-center justify-center"
+            style={{ borderColor: `${theme.textColor}99`, color: theme.textColor }}
+          >
+            ←
+          </button>
+          <div className="text-sm font-semibold">{theme.title}</div>
+        </div>
+
+        <div className="relative w-full flex-1 mt-6">
+          <img src={theme.sceneImg} alt={theme.title} className="w-full h-auto" />
+          <div
+            className="absolute bg-white text-[#4B3425] text-xs rounded-2xl px-3 py-2 shadow-md"
+            style={theme.bubbleStyle}
+          >
+            {theme.bubbleText}
+          </div>
+        </div>
+
+        <div className="mt-4 text-sm font-semibold">{theme.tagline}</div>
+        <button
+          onClick={() => setView("scale")}
+          disabled={!canStart}
+          className="mt-5 w-full rounded-full bg-[#4B3425] text-white py-3 font-semibold disabled:opacity-50"
+        >
+          {canStart ? theme.ctaText : "当前年龄暂不适用"}
+        </button>
+      </div>
+    );
+  }
+
+  if (view === "scale") {
+    const scaleId = allowedScaleIds[currentScaleIndex];
+    const isLast = currentScaleIndex >= allowedScaleIds.length - 1;
+    return (
+      <ScaleRunner
+        username={username}
+        scaleId={scaleId}
+        onBack={() => setView("intro")}
+        backLabel="← 返回主题"
+        onComplete={(payload) => {
+          recordResult(payload);
+          if (!isLast) {
+            setCurrentScaleIndex((idx) => idx + 1);
+          } else {
+            setView("summary");
+          }
+        }}
+        completeLabel={isLast ? "返回成长地图 →" : "继续下一份 →"}
+        autoAdvance
+        themeBg={activeZone.theme.bgColor}
+        themeTextColor={activeZone.theme.textColor}
+      />
+    );
+  }
+
+  if (view === "summary") {
+    return (
+      <div
+        className="rounded-[28px] p-5 min-h-[560px] flex flex-col gap-4"
+        style={{ backgroundColor: activeZone.theme.bgColor, color: activeZone.theme.textColor }}
+      >
+        <div className="w-full flex items-center gap-2">
+          <button
+            onClick={() => setView("map")}
+            className="h-9 w-9 rounded-full border text-lg flex items-center justify-center"
+            style={{ borderColor: `${activeZone.theme.textColor}99`, color: activeZone.theme.textColor }}
+          >
+            ←
+          </button>
+          <div className="text-sm font-semibold">{activeZone.theme.title} · 总结</div>
+        </div>
+        {renderSummary()}
+        <button
+          onClick={() => setView("map")}
+          className="mt-auto w-full rounded-full bg-[#4B3425] text-white py-3 font-semibold"
+        >
+          返回成长地图 →
+        </button>
+      </div>
+    );
+  }
+
   return (
     <ScaleRunner
       username={username}
-      scaleId={selectedId}
-      onBack={() => setSelectedId(null)}
+      scaleId={activeZone.scaleIds[0]}
+      onBack={() => setView("map")}
     />
   );
 }

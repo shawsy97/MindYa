@@ -77,10 +77,18 @@ function scoreDASS21(scale, answers) {
 export const SCALE_BANK = {
   DASS21: {
     id: "DASS21",
-    name: "DASS-21",
+    name: "心情天气探索",
     period: "过去一周",
     type: "likert",
     ageRange: { min: 12, max: 18 },
+    intro: {
+      title: "心情天气探索",
+      prompt: "最近一周的情绪更像什么天气？没有对错，只选最接近你的感受。",
+      paragraphs: [
+        "请仔细阅读以下每个条目，并根据过去一周的情况，在每个条目中选择适用于你情况的程度选项。",
+        "请回答每个条目，选择没有对错之分。",
+      ],
+    },
     options: OPTIONS_0_3,
     items: [
       // Stress
@@ -156,10 +164,18 @@ export const SCALE_BANK = {
   },
   SRSS: {
     id: "SRSS",
-    name: "SRSS 睡眠质量问卷",
+    name: "夜晚恢复力",
     period: "近 1 个月内",
     type: "likert",
     ageRange: { min: 12, max: 18 },
+    intro: {
+      title: "夜晚恢复力",
+      prompt: "最近的睡眠怎么样？入睡、醒来、精力恢复情况如何？",
+      paragraphs: [
+        "以下问题是了解你睡眠情况的，请在最符合自己的每个问题上选择一个答案（√）。",
+        "时间限定在近 1 个月内。",
+      ],
+    },
     // 这里放一个默认 options（兜底），但 SRSS 我们主要用 item.options
     options: [
       { label: "①", value: 1 },
@@ -287,11 +303,23 @@ export const SCALE_BANK = {
       const keys = SCALE_BANK.SRSS.items.map((i) => i.key);
       const total = keys.reduce((acc, k) => acc + Number(answers[k]), 0);
 
+      let level = "睡眠质量正常";
+      let riskLevel = "low";
+      if (total >= 40) {
+        level = "重度睡眠障碍";
+        riskLevel = "high";
+      } else if (total >= 30) {
+        level = "中度睡眠障碍";
+        riskLevel = "high";
+      } else if (total >= 23) {
+        level = "轻度睡眠障碍";
+        riskLevel = "medium";
+      }
+
       return {
         score: { total, range: "10-50" },
-        // 先不做 level 分级（你文档没给阈值）
-        level: { total: "—" },
-        flags: { riskLevel: "low" },
+        level: { total: level },
+        flags: { riskLevel },
       };
     },
 
@@ -302,10 +330,20 @@ export const SCALE_BANK = {
   },
   ERQ: {
     id: "ERQ",
-    name: "ERQ 情绪调节问卷",
+    name: "我的情绪背包",
     period: "一般情况",
     type: "likert",
     ageRange: { min: 12, max: 18 },
+    intro: {
+      title: "我的情绪背包",
+      prompt: "当不开心或生气时，你通常会怎么做？每个人都有不同的方式。",
+      paragraphs: [
+        "在这一部分，我们将有一些关于你的情绪生活的问题要问你，尤其是你如何控制（这指的是调节与管理）你的情绪。",
+        "我们感兴趣的是你的情绪生活的两部分内容。一部分是你的情绪体验，或者说是你内心的感受是什么；另一部分是你的情绪表达，或者说是你如何用言语、姿势或者行为等方式来表达情绪。",
+        "虽然一些问题看起来和其他问题类似，但它们却有相当程度的不同。对下面两页的每一项表述，请在每一个表述对应的等级上表明你赞同或者不赞同的水平。",
+      ],
+      image: "erq-scale.png",
+    },
     options: [
       { label: "完全不同意", value: 1 },
       { label: "很不同意", value: 2 },
@@ -343,9 +381,15 @@ export const SCALE_BANK = {
       const supMean = Number((supSum / supKeys.length).toFixed(2));
 
       // 不做“高低好坏”的医学判断，只输出策略倾向
-      let strategy = "均衡";
-      if (reMean - supMean >= 0.8) strategy = "更偏向认知重评";
-      else if (supMean - reMean >= 0.8) strategy = "更偏向表达抑制";
+      let strategy = "比较均衡";
+      let summary = "你对情绪的处理方式比较灵活，会在不同情境下做出调整。";
+      if (reMean - supMean >= 0.8) {
+        strategy = "更偏向认知重评";
+        summary = "你更习惯换个角度看问题，让情绪慢慢变轻。";
+      } else if (supMean - reMean >= 0.8) {
+        strategy = "更偏向表达抑制";
+        summary = "你更习惯把情绪先收起来，之后再慢慢消化。";
+      }
 
       return {
         score: {
@@ -354,7 +398,7 @@ export const SCALE_BANK = {
           reappraisal_sum: reSum,
           suppression_sum: supSum,
         },
-        level: { strategy }, // 这里用 level 字段存“倾向”最省事
+        level: { strategy, summary }, // 这里用 level 字段存“倾向”最省事
         flags: { riskLevel: "low" },
       };
     },
@@ -425,6 +469,7 @@ export const SCALE_BANK = {
           // 可选：更细粒度标签
           selfHarmIdeation: ideation >= 1,
           selfHarmBehavior: behavior >= 1,
+          hasConcern: ideation >= 1 || behavior >= 1,
           timeWindow: "1m",
         },
       };
@@ -518,6 +563,7 @@ export const SCALE_BANK = {
           suicideIdeation: ideation === 1,
           suicidePlan: plan === 1,
           suicideAttempt: attempt === 1 || attemptCount > 0,
+          hasConcern: ideation === 1 || plan === 1 || attempt === 1 || attemptCount > 0,
         },
       };
     },
@@ -533,10 +579,17 @@ export const SCALE_BANK = {
   },
   ACADEMIC_BURNOUT: {
     id: "ACADEMIC_BURNOUT",
-    name: "学业倦怠问卷",
+    name: "学习能量值",
     period: "近期（按问卷：最近/最近一段时间）",
     type: "likert",
     ageRange: { min: 12, max: 18 },
+    intro: {
+      title: "学习能量值",
+      prompt: "最近学习时的感觉如何？是充满动力，还是有点累？",
+      paragraphs: [
+        "此部分是你对自己学习状况的描述，请在符合自己实际情况的选项上划“√”，每题只选择一个答案，请不要多选或漏选。",
+      ],
+    },
     options: [
       { label: "很不符合", value: 1 },
       { label: "不太符合", value: 2 },
@@ -601,10 +654,18 @@ export const SCALE_BANK = {
   },
   SCHOOL_AVERSION: {
     id: "SCHOOL_AVERSION",
-    name: "厌学量表",
+    name: "上学状态小调查",
     period: "近期（按问卷：你的实际情况）",
     type: "likert",
     ageRange: { min: 12, max: 18 },
+    intro: {
+      title: "上学状态小调查",
+      prompt: "最近想到上学时的感受如何？轻松、平常，还是有点抗拒？",
+      paragraphs: [
+        "请根据你的实际情况，对下列各题选择合适的选项划“√”。",
+        "（1=完全不符合，2=不符合，3=不确定，4=符合，5=完全符合）",
+      ],
+    },
     options: [
       { label: "完全不符合", value: 1 },
       { label: "不符合", value: 2 },
@@ -639,11 +700,20 @@ export const SCALE_BANK = {
       const total = keys.reduce((acc, k) => acc + Number(answers[k]), 0);
       const mean = Number((total / keys.length).toFixed(2)); // 1~5
 
-      // 这份问卷文档未提供阈值cut-off，所以不做硬分级，避免误判
+      let level = "无厌学";
+      let riskLevel = "low";
+      if (mean >= 4) {
+        level = "重度厌学";
+        riskLevel = "high";
+      } else if (mean >= 3) {
+        level = "轻度厌学";
+        riskLevel = "medium";
+      }
+
       return {
         score: { total, mean, items: keys.length, range: "17-85" },
-        level: { total: "—" },
-        flags: { riskLevel: "low" },
+        level: { total: level },
+        flags: { riskLevel },
       };
     },
 
@@ -654,14 +724,15 @@ export const SCALE_BANK = {
   },
   ANHEDONIA: {
     id: "ANHEDONIA",
-    name: "快感缺失问卷",
+    name: "开心感小调查",
     period: "过去两星期",
     type: "likert",
     ageRange: { min: 12, max: 18 },
 
     // ⭐ 建议有说明页（和自伤/自杀一样严谨）
     intro: {
-      title: "关于快感缺失的说明",
+      title: "开心感小调查",
+      prompt: "最近做一些事情时，还能感受到开心或兴趣吗？一起看看最近的状态。",
       paragraphs: [
         "本问卷旨在了解你在过去两星期内，对生活中有趣、愉快事情的感受程度。",
         "这里所说的“快感”，包括对活动的兴趣、期待、动力，以及情绪上的愉快体验。",
@@ -720,6 +791,16 @@ export const SCALE_BANK = {
 
       const mean = Number((total / SCALE_BANK.ANHEDONIA.items.length).toFixed(2));
 
+      let level = "状态平稳";
+      let riskLevel = "low";
+      if (mean > 2) {
+        level = "持续低落";
+        riskLevel = "high";
+      } else if (mean > 1) {
+        level = "轻度波动";
+        riskLevel = "medium";
+      }
+
       return {
         score: {
           total,                 // 0 ~ 42
@@ -728,10 +809,11 @@ export const SCALE_BANK = {
           reversedItems: reversed,
         },
         level: {
-          summary: "分数越高表示快感缺失体验越明显",
+          summary: "分数越高表示开心感降低体验越明显",
+          tier: level,
         },
         flags: {
-          riskLevel: "low",
+          riskLevel,
         },
       };
     },
@@ -744,13 +826,14 @@ export const SCALE_BANK = {
   },
   BULLYING: {
     id: "BULLYING",
-    name: "欺凌问卷（主动 / 被动）",
+    name: "校园相处感受",
     period: "过去的一年",
     type: "likert",
     ageRange: { min: 8, max: 18 },
 
     intro: {
-      title: "关于欺凌行为的说明",
+      title: "校园相处感受",
+      prompt: "和同学相处时，你的感受如何？自在，还是有些不舒服？",
       paragraphs: [
         "本问卷旨在了解你在过去一年中，是否经历过或参与过不同形式的欺凌行为。",
         "欺凌行为包括语言、关系、身体以及网络等多种形式。",
@@ -827,6 +910,7 @@ export const SCALE_BANK = {
           riskLevel: victimAny ? "medium" : "low",
           victim: victimAny,
           bully: bullyAny,
+          hasConcern: victimAny || bullyAny,
         },
       };
     },
