@@ -853,7 +853,7 @@ function ScaleHub({ username, user }) {
         bubbleText: "小狐狸遇到难过的事情，会换个角度想想。你也是吗？",
         tagline: "你遇到问题，会换个角度想想吗？",
         ctaText: "登山看看 →",
-        bubbleStyle: { top: "30%", left: "44%", width: "46%" },
+        bubbleStyle: { top: "10%", left: "44%", width: "46%" },
       },
     },
     {

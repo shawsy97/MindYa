@@ -694,8 +694,20 @@ app.post("/api/chat", async (req, res) => {
     console.log("🔑 Key prefix:", process.env.DASHSCOPE_API_KEY.substring(0, 8));
   }
   try {
+    if (!process.env.DASHSCOPE_API_KEY) {
+      appendSystemLog({
+        type: "system",
+        event: "api_error",
+        endpoint: "/api/chat",
+        status: 500,
+        error_code: "MISSING_DASHSCOPE_API_KEY",
+      });
+      return res.status(500).json({ error: "Missing DASHSCOPE_API_KEY" });
+    }
+
     const chatStart = Date.now();
     const { messages, userProfile, role } = req.body;
+    const model = process.env.DASHSCOPE_MODEL || "qwen-max";
 
     // 1) 拼 system prompt：把"非诊断/未成年人/风险引导"写死在后端
     const system = `
@@ -728,7 +740,7 @@ app.post("/api/chat", async (req, res) => {
         "Authorization": `Bearer ${process.env.DASHSCOPE_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "qwen3-max",        // 你可换成你开通的模型
+        model,        // 你可换成你开通的模型
         messages: [
           { role: "system", content: system },
           ...messages, // [{role:"user"|"assistant", content:"..."}]
@@ -745,8 +757,9 @@ app.post("/api/chat", async (req, res) => {
         endpoint: "/api/chat",
         status: resp.status,
         error_code: "QWEN_UPSTREAM_ERROR",
+        detail: errText,
       });
-      return res.status(500).json({ error: "Upstream error", detail: errText });
+      return res.status(resp.status).json({ error: "Upstream error", detail: errText });
     }
 
     const data = await resp.json();
