@@ -1,0 +1,353 @@
+{
+  "id": "xsy_1774421797969",
+  "username": "xsy",
+  "version": "v1",
+  "createdAt": "2026-03-25T06:56:37.969Z",
+  "updatedAt": "2026-03-25T06:56:37.969Z",
+  "profile": {
+    "username": "xsy",
+    "age": "16",
+    "grade": "高中",
+    "gender": "女生"
+  },
+  "themeMap": {
+    "emotion_forest": [
+      "DASS21",
+      "ANHEDONIA",
+      "ERQ"
+    ],
+    "digital_island": [
+      "NET_ADDICT"
+    ],
+    "stress_sea": [
+      "ACADEMIC_BURNOUT",
+      "SCHOOL_AVERSION"
+    ],
+    "confidence_garden": [
+      "BULLYING"
+    ],
+    "sleep_planet": [
+      "SRSS"
+    ]
+  },
+  "scales": {
+    "SRSS": {
+      "scaleId": "SRSS",
+      "scaleName": "学生风险筛查量表",
+      "createdAt": "2026-03-25T06:38:00.629Z",
+      "score": {
+        "total": 15,
+        "range": "10-50"
+      },
+      "level": {
+        "total": "睡眠质量正常"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "s1": 2,
+        "s2": 3,
+        "s3": 1,
+        "s4": 2,
+        "s5": 1,
+        "s6": 1,
+        "s7": 1,
+        "s8": 1,
+        "s9": 1,
+        "s10": 2
+      }
+    },
+    "DASS21": {
+      "scaleId": "DASS21",
+      "scaleName": "DASS21",
+      "createdAt": "2026-03-25T06:38:56.786Z",
+      "score": {
+        "depression": 0,
+        "anxiety": 0,
+        "stress": 0
+      },
+      "level": {
+        "depression": "正常",
+        "anxiety": "正常",
+        "stress": "正常"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "q1": 0,
+        "q6": 0,
+        "q8": 0,
+        "q11": 0,
+        "q12": 0,
+        "q14": 0,
+        "q18": 0,
+        "q2": 0,
+        "q4": 0,
+        "q7": 0,
+        "q9": 0,
+        "q15": 0,
+        "q19": 0,
+        "q20": 0,
+        "q3": 0,
+        "q5": 0,
+        "q10": 0,
+        "q13": 0,
+        "q16": 0,
+        "q17": 0,
+        "q21": 0
+      }
+    },
+    "ANHEDONIA": {
+      "scaleId": "ANHEDONIA",
+      "scaleName": "ANHEDONIA",
+      "createdAt": "2026-03-25T06:39:36.712Z",
+      "score": {
+        "total": 2,
+        "mean": 0.14,
+        "items": 14,
+        "reversedItems": 3
+      },
+      "level": {
+        "summary": "分数越高表示开心感降低体验越明显",
+        "tier": "状态平稳"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "a1": 0,
+        "a2": 0,
+        "a3": 0,
+        "a4": 0,
+        "a5": 0,
+        "a6": 0,
+        "a7": 0,
+        "a8": 2,
+        "a9": 0,
+        "a10": 0,
+        "a11": 2,
+        "a12": 0,
+        "a13": 0,
+        "a14": 3
+      }
+    },
+    "ACADEMIC_BURNOUT": {
+      "scaleId": "ACADEMIC_BURNOUT",
+      "scaleName": "ACADEMIC_BURNOUT",
+      "createdAt": "2026-03-25T06:42:36.880Z",
+      "score": {
+        "total": 16,
+        "mean": 1,
+        "items": 16,
+        "reversedItems": 7
+      },
+      "level": {
+        "total": "—"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "ab1": 5,
+        "ab2": 1,
+        "ab3": 1,
+        "ab4": 5,
+        "ab5": 1,
+        "ab6": 1,
+        "ab7": 5,
+        "ab8": 1,
+        "ab9": 1,
+        "ab10": 1,
+        "ab11": 5,
+        "ab12": 1,
+        "ab13": 1,
+        "ab14": 5,
+        "ab15": 5,
+        "ab16": 5
+      }
+    },
+    "SCHOOL_AVERSION": {
+      "scaleId": "SCHOOL_AVERSION",
+      "scaleName": "SCHOOL_AVERSION",
+      "createdAt": "2026-03-25T06:43:04.737Z",
+      "score": {
+        "total": 17,
+        "mean": 1,
+        "items": 17,
+        "range": "17-85"
+      },
+      "level": {
+        "total": "无厌学"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "sa1": 1,
+        "sa2": 1,
+        "sa3": 1,
+        "sa4": 1,
+        "sa5": 1,
+        "sa6": 1,
+        "sa7": 1,
+        "sa8": 1,
+        "sa9": 1,
+        "sa10": 1,
+        "sa11": 1,
+        "sa12": 1,
+        "sa13": 1,
+        "sa14": 1,
+        "sa15": 1,
+        "sa16": 1,
+        "sa17": 1
+      }
+    },
+    "ERQ": {
+      "scaleId": "ERQ",
+      "scaleName": "情绪调节问卷",
+      "createdAt": "2026-03-25T06:41:12.741Z",
+      "score": {
+        "reappraisal_mean": 5.83,
+        "suppression_mean": 2,
+        "reappraisal_sum": 35,
+        "suppression_sum": 8,
+        "suppression_reverse_mean": 6
+      },
+      "level": {
+        "strategy": "更偏向认知重评",
+        "summary": "你更习惯换个角度看问题，让情绪慢慢变轻。"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "e1": 6,
+        "e2": 2,
+        "e3": 6,
+        "e4": 2,
+        "e5": 6,
+        "e6": 2,
+        "e7": 5,
+        "e8": 6,
+        "e9": 2,
+        "e10": 6
+      }
+    },
+    "BULLYING": {
+      "scaleId": "BULLYING",
+      "scaleName": "BULLYING",
+      "createdAt": "2026-03-25T06:41:51.495Z",
+      "score": {
+        "victim_sum": 0,
+        "bully_sum": 0,
+        "victim_mean": 0,
+        "bully_mean": 0
+      },
+      "level": {
+        "summary": "过去一年中未报告欺凌相关行为或经历"
+      },
+      "flags": {
+        "riskLevel": "low",
+        "victim": false,
+        "bully": false,
+        "hasConcern": false
+      },
+      "answers": {
+        "v1": 0,
+        "v2": 0,
+        "v3": 0,
+        "v4": 0,
+        "v5": 0,
+        "v6": 0,
+        "v7": 0,
+        "v8": 0,
+        "b1": 0,
+        "b2": 0,
+        "b3": 0,
+        "b4": 0,
+        "b5": 0,
+        "b6": 0,
+        "b7": 0,
+        "b8": 0
+      }
+    },
+    "NET_ADDICT": {
+      "scaleId": "NET_ADDICT",
+      "scaleName": "青少年上网成瘾自评量表",
+      "createdAt": "2026-03-25T06:37:06.768Z",
+      "score": {
+        "total": 24,
+        "range": "17-85",
+        "symptom": 20,
+        "cause": 4,
+        "threshold": 45
+      },
+      "level": {
+        "status": "未超过阈值"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "n1": 3,
+        "n2": 1,
+        "n3": 1,
+        "n4": 4,
+        "n5": 1,
+        "n6": 1,
+        "n7": 3,
+        "n8": 1,
+        "n9": 1,
+        "n10": 1,
+        "n11": 1,
+        "n12": 1,
+        "n13": 1,
+        "n14": 1,
+        "n15": 1,
+        "n16": 1,
+        "n17": 1
+      }
+    }
+  },
+  "content": {
+    "overallConclusion": {
+      "stableAreas": [
+        "情绪调节",
+        "睡眠质量",
+        "欺凌经历"
+      ],
+      "attentionAreas": [
+        "学业倦怠",
+        "网络使用习惯"
+      ],
+      "highRiskAreas": []
+    },
+    "themeSummaries": {
+      "emotion_forest": "情绪状态良好，能够有效管理情绪。",
+      "digital_island": "网络使用未达到成瘾标准，但需注意合理安排上网时间。",
+      "stress_sea": "存在一定程度的学业压力感，但尚未表现出明显的厌学情绪。",
+      "confidence_garden": "在过去一年中没有遭受或参与过任何形式的校园欺凌。",
+      "sleep_planet": "睡眠质量正常，保持良好的作息习惯对身心健康有益。"
+    },
+    "scaleInterpretations": {
+      "SRSS": "根据学生风险筛查量表的结果显示，您的睡眠质量处于正常范围内。",
+      "DASS21": "抑郁、焦虑及压力水平均在正常范围之内。",
+      "ANHEDONIA": "开心感体验较为稳定，没有显著的情绪低落表现。",
+      "ERQ": "您更倾向于采用认知重评的方式处理负面情绪，这是一种积极健康的应对机制。",
+      "ACADEMIC_BURNOUT": "虽然目前感到一定的学习疲劳，但整体上仍能维持正常的学习生活。",
+      "SCHOOL_AVERSION": "对于学校环境持有正面态度，并未出现逃避上学的行为。",
+      "BULLYING": "在过去的一年里，既没有成为欺凌行为的对象也没有实施过欺凌行为。",
+      "NET_ADDICT": "网络使用频率适中，未达到成瘾程度，但仍建议适当控制在线时长。"
+    },
+    "riskWarnings": [],
+    "comprehensiveAnalysis": "从本次评估结果来看，xsy同学在多个方面都展现出了较好的心理状态与适应能力。特别是在情绪管理和社交关系（如避免欺凌）方面做得非常好。然而，在面对学业挑战时可能会感受到一定压力，这需要通过有效的放松技巧和时间管理策略来缓解。同时，尽管当前网络使用情况健康，也应继续保持警惕，防止过度依赖电子设备影响日常生活。",
+    "interventions": {
+      "daily": "建议每天安排固定时间进行体育锻炼或其他兴趣爱好活动，以减轻学习带来的紧张感；保证充足的休息时间和高质量的睡眠。",
+      "homeSchool": "家长和老师可以共同为孩子创造一个支持性的成长环境，鼓励开放沟通，及时了解并解决他们在学习生活中遇到的问题。",
+      "professional": "如果发现自我调节困难或者情绪问题持续存在，可考虑寻求心理咨询师的帮助，获取专业的指导和支持。"
+    },
+    "notes": "本报告为自动生成的筛查性反馈，最终解释需由专业人员结合实际情况完成。"
+  }
+}

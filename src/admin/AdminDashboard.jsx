@@ -13,6 +13,7 @@ import logoImg from '../assets/logo.png';
 import ConversationsTab from './ConversationsTab';
 import ConversationDetail from './ConversationDetail';
 import UserDetail from './UserDetail';
+import UserReport from './UserReport';
 import ScaleDetail from './ScaleDetail'; // 新增：量表详情组件
 import TaskDetail from './TaskDetail'; // 新增：任务详情组件
 export default function AdminDashboard({ admin, onLogout }) {
@@ -28,6 +29,7 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedScale, setSelectedScale] = useState(null); // 新增：选中的量表ID
   const [selectedTask, setSelectedTask] = useState(null); // 新增：选中的游戏ID
+  const [reportUser, setReportUser] = useState(null);
   // 在 AdminDashboard 组件的 useEffect 中修改，添加新的数据获取
   useEffect(() => {
     const fetchData = async () => {
@@ -103,6 +105,10 @@ export default function AdminDashboard({ admin, onLogout }) {
       />;
     }
 
+    if (reportUser) {
+      return <UserReport user={reportUser} onBack={() => setReportUser(null)} />;
+    }
+
     // 如果选择了用户，显示用户详情
     if (selectedUser) {
       return <UserDetail
@@ -110,6 +116,10 @@ export default function AdminDashboard({ admin, onLogout }) {
         conversations={data.conversations}
         onBack={() => setSelectedUser(null)}
         onSelectConversation={setSelectedConversation}
+        onOpenReport={(user) => {
+          setSelectedUser(null);
+          setReportUser(user);
+        }}
       />;
     }
 
@@ -172,12 +182,12 @@ export default function AdminDashboard({ admin, onLogout }) {
       </div>
 
       {/* 主内容区 */}
-      <div className={`flex-1 overflow-y-auto ${selectedConversation || selectedUser || selectedScale ? 'pb-4' : 'pb-16'}`}>
+      <div className={`flex-1 overflow-y-auto ${selectedConversation || selectedUser || selectedScale || reportUser ? 'pb-4' : 'pb-16'}`}>
         {renderContent()}
       </div>
 
       {/* 移动端底部导航栏 - 只在没有选中用户或对话或量表或游戏时显示 */}
-      {!selectedConversation && !selectedUser && !selectedScale && !selectedTask && (
+      {!selectedConversation && !selectedUser && !selectedScale && !selectedTask && !reportUser && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-lg max-w-md mx-auto">
           <div className="flex justify-around items-center h-16">
             <button
@@ -1093,7 +1103,9 @@ function ScalesTab({ scales, loading, onSelectScale }) {
         'ACADEMIC_BURNOUT': 80,
         'SCHOOL_AVERSION': 85,
         'ANHEDONIA': 42,
-        'BULLYING': 24
+        'BULLYING': 24,
+        'BULLYING_SIMPLE': 12,
+        'NET_ADDICT': 85
       };
       return scaleRanges[scale.scaleId] || 100;
     }

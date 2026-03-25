@@ -131,6 +131,14 @@ export const SCALE_BANK = {
     period: "过去 1 周",
     type: "likert",
     ageRange: { min: 8, max: 11 },
+    intro: {
+      title: "PHQ-9 抑郁量表",
+      prompt: "请根据过去 1 周的真实感受作答。",
+      paragraphs: [
+        "每题请选择最符合你情况的选项。",
+        "第 9 题涉及自伤/轻生想法，需要特别关注。",
+      ],
+    },
     options: OPTIONS_PHQ9,
     items: [
       { key: "p1", text: "做事时提不起劲或没有兴趣。" },
@@ -146,6 +154,7 @@ export const SCALE_BANK = {
     score: (answers) => {
       assertAllAnswered(SCALE_BANK.PHQ9_CHILD, answers);
       const total = Object.values(answers).reduce((sum, v) => sum + Number(v), 0);
+      const item9 = Number(answers.p9);
       let level = "轻微";
       if (total <= 4) level = "无或极轻";
       else if (total <= 9) level = "轻度";
@@ -153,14 +162,21 @@ export const SCALE_BANK = {
       else if (total <= 19) level = "中重度";
       else level = "重度";
       const flags = {
-        riskLevel: total >= 15 ? "medium" : "low",
+        riskLevel: item9 > 0 ? "high" : total >= 15 ? "medium" : "low",
+        item9Concern: item9 > 0,
       };
-      return { score: { total }, level: { severity: level }, flags };
+      return { score: { total, item9 }, level: { severity: level }, flags };
     },
-    interpret: (res) => [
-      `总分：${res.score.total}`,
-      `严重度：${res.level.severity}`,
-    ],
+    interpret: (res) => {
+      const lines = [
+        `总分：${res.score.total}`,
+        `严重度：${res.level.severity}`,
+      ];
+      if (res?.flags?.item9Concern) {
+        lines.push("第 9 题提示需要单独关注，建议及时寻求支持。");
+      }
+      return lines;
+    },
   },
   SRSS: {
     id: "SRSS",
@@ -408,6 +424,100 @@ export const SCALE_BANK = {
       `表达抑制均分：${res.score.suppression_mean} / 7`,
       `策略倾向：${res.level.strategy}`,
     ],
+  },
+  NET_ADDICT: {
+    id: "NET_ADDICT",
+    name: "网络使用小调查",
+    period: "最近一段时间",
+    type: "likert",
+    ageRange: { min: 12, max: 18 },
+    intro: {
+      title: "网络使用小调查",
+      prompt: "这是一份关于上网习惯的小测试，请根据你的真实感受选择。",
+      paragraphs: [
+        "没有对错之分，只需要选择最接近你最近情况的答案。",
+        "我们想了解的是你在网络上的感受与行为。",
+      ],
+    },
+    options: [
+      { label: "没有", value: 1 },
+      { label: "不一定", value: 2 },
+      { label: "有一点", value: 3 },
+      { label: "大部分", value: 4 },
+      { label: "总是", value: 5 },
+    ],
+    items: [
+      { key: "n1", text: "我上网时间太长或上网次数太多。" },
+      { key: "n2", text: "我常不由自主地想起或梦见网上的内容。" },
+      { key: "n3", text: "我感到平时处处不如别人，才上网的。" },
+      { key: "n4", text: "我上网经常超过4小时。" },
+      { key: "n5", text: "我曾试过少花点时间上网却做不到。" },
+      { key: "n6", text: "我比以前要增加上网时间才能得到满足。" },
+      { key: "n7", text: "我平均每周上网时间比前段时间增加了。" },
+      { key: "n8", text: "我减少上网时间就心烦意乱。" },
+      { key: "n9", text: "我减少上网时间就手指发抖。" },
+      { key: "n10", text: "我减少上网时间就不高兴。" },
+      { key: "n11", text: "我减少上网时间做其他事情就不安心。" },
+      { key: "n12", text: "我控制不住自己上网的冲动。" },
+      { key: "n13", text: "我在网上经常忘了时间过了多久。" },
+      { key: "n14", text: "我是一到放学就会去上网的。" },
+      { key: "n15", text: "我常对别人隐瞒自己上网时间太长。" },
+      { key: "n16", text: "我是长期心情低落才上网的。" },
+      { key: "n17", text: "平时与人说话紧张是我上网的原因之一。" },
+    ],
+    score: (answers) => {
+      assertAllAnswered(SCALE_BANK.NET_ADDICT, answers);
+
+      const symptomKeys = [
+        "n1",
+        "n2",
+        "n4",
+        "n5",
+        "n6",
+        "n7",
+        "n8",
+        "n9",
+        "n10",
+        "n11",
+        "n12",
+        "n13",
+        "n15",
+      ];
+      const causeKeys = ["n3", "n14", "n16", "n17"];
+
+      const symptom = symptomKeys.reduce((acc, k) => acc + Number(answers[k]), 0);
+      const cause = causeKeys.reduce((acc, k) => acc + Number(answers[k]), 0);
+      const total = symptom + cause;
+
+      const riskLevel = total > 45 ? "high" : "low";
+
+      return {
+        score: {
+          total,
+          range: "17-85",
+          symptom,
+          cause,
+          threshold: 45,
+        },
+        level: {
+          status: total > 45 ? "超过阈值" : "未超过阈值",
+        },
+        flags: { riskLevel },
+      };
+    },
+    interpret: (res) => {
+      const total = res?.score?.total ?? 0;
+      if (total > 45) {
+        return [
+          `网络小岛的潮位偏高（总分 ${total} / 85）`,
+          "这段时间线上活动可能占了不少精力，可以试着给自己留些线下休息的空档。",
+        ];
+      }
+      return [
+        `网络小岛的潮位平稳（总分 ${total} / 85）`,
+        "目前线上活动比较可控，继续保持节奏就好。",
+      ];
+    },
   },
   SELF_HARM: {
     id: "SELF_HARM",
@@ -829,7 +939,7 @@ export const SCALE_BANK = {
     name: "校园相处感受",
     period: "过去的一年",
     type: "likert",
-    ageRange: { min: 8, max: 18 },
+    ageRange: { min: 10, max: 18 },
 
     intro: {
       title: "校园相处感受",
@@ -919,6 +1029,73 @@ export const SCALE_BANK = {
       `被动欺凌（受欺负）：总分 ${res.score.victim_sum}，均分 ${res.score.victim_mean}`,
       `主动欺凌（欺负他人）：总分 ${res.score.bully_sum}，均分 ${res.score.bully_mean}`,
       res.level.summary,
+    ],
+  },
+  BULLYING_SIMPLE: {
+    id: "BULLYING_SIMPLE",
+    name: "同伴相处小问答",
+    period: "过去 12 个月",
+    type: "likert",
+    ageRange: { min: 8, max: 9 },
+    intro: {
+      title: "同伴相处小问答",
+      prompt: "下面的问题没有对错，只要选最接近你的情况。",
+      paragraphs: [
+        "如果发生过类似情况，请选对应的频次。",
+        "系统只会告诉你是否需要关注。",
+      ],
+    },
+    options: [
+      { label: "从没有过", value: 0 },
+      { label: "只发生过 1 次", value: 1 },
+      { label: "已经发生了 2 次", value: 2 },
+      { label: "发生 > 2 次", value: 3 },
+    ],
+    items: [
+      { key: "b1", text: "在过去的 12 个月中你被欺负过么？", sub: "victim" },
+      { key: "b2", text: "在过去的 12 个月中，有人使用互联网、手机短信、微博、微信（或其他电子设备）欺负、取笑或威胁过你么？", sub: "victim" },
+      { key: "b3", text: "在过去的 12 个月中你欺负过别人么？", sub: "bully" },
+      { key: "b4", text: "在过去的 12 个月中，你使用互联网、手机短信、微博、微信（或其他电子设备）欺负、取笑或威胁过别人么？", sub: "bully" },
+    ],
+    score: (answers) => {
+      assertAllAnswered(SCALE_BANK.BULLYING_SIMPLE, answers);
+
+      const victim1 = Number(answers.b1);
+      const victim2 = Number(answers.b2);
+      const bully1 = Number(answers.b3);
+      const bully2 = Number(answers.b4);
+
+      const victim = victim1 >= 2 || victim2 >= 2;
+      const bully = bully1 >= 2 || bully2 >= 2;
+      const total = victim1 + victim2 + bully1 + bully2;
+
+      let role = "无卷入";
+      if (victim && bully) role = "受害-施暴者";
+      else if (victim) role = "受欺负者";
+      else if (bully) role = "欺负者";
+
+      return {
+        score: {
+          total,
+          range: "0-12",
+          victim_sum: victim1 + victim2,
+          bully_sum: bully1 + bully2,
+          threshold: 2,
+        },
+        level: {
+          role,
+        },
+        flags: {
+          riskLevel: victim || bully ? "medium" : "low",
+          victim,
+          bully,
+          hasConcern: victim || bully,
+        },
+      };
+    },
+    interpret: (res) => [
+      `相处小测总分：${res.score.total} / 12`,
+      `结果分类：${res.level.role}`,
     ],
   },
 };

@@ -4,6 +4,7 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require('bcryptjs');
+const puppeteer = require("puppeteer");
 
 require('dotenv').config(); // ← 加载 .env 文件
 
@@ -37,6 +38,9 @@ const resultsPath = path.join(dataDir, "results.csv");
 const logsPath = path.join(dataDir, "logs.csv");
 const systemLogPath = path.join(dataDir, "system_logs.jsonl");
 const conversationsPath = path.join(dataDir, "conversations.json");
+const reportsDir = path.join(dataDir, "reports");
+const reportsIndexPath = path.join(reportsDir, "index.json");
+const mediaDir = path.join(dataDir, "media");
 
 const ensureDataFiles = () => {
   if (!fs.existsSync(dataDir)) {
@@ -64,6 +68,15 @@ const ensureDataFiles = () => {
   if (!fs.existsSync(conversationsPath)) {
     fs.writeFileSync(conversationsPath, "{}", "utf-8");
   }
+  if (!fs.existsSync(reportsDir)) {
+    fs.mkdirSync(reportsDir, { recursive: true });
+  }
+  if (!fs.existsSync(reportsIndexPath)) {
+    fs.writeFileSync(reportsIndexPath, "[]", "utf-8");
+  }
+  if (!fs.existsSync(mediaDir)) {
+    fs.mkdirSync(mediaDir, { recursive: true });
+  }
 };
 
 const readConversations = () => {
@@ -87,6 +100,37 @@ const readUsers = () => {
 
 const writeUsers = (users) => {
   fs.writeFileSync(usersPath, JSON.stringify(users, null, 2), "utf-8");
+};
+
+const readReportsIndex = () => {
+  ensureDataFiles();
+  try {
+    return JSON.parse(fs.readFileSync(reportsIndexPath, "utf-8"));
+  } catch {
+    return [];
+  }
+};
+
+const writeReportsIndex = (index) => {
+  fs.writeFileSync(reportsIndexPath, JSON.stringify(index, null, 2), "utf-8");
+};
+
+const getMimeType = (filename) => {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".mp3") return "audio/mpeg";
+  if (ext === ".m4a") return "audio/mp4";
+  if (ext === ".wav") return "audio/wav";
+  if (ext === ".mp4") return "video/mp4";
+  if (ext === ".webm") return "video/webm";
+  if (ext === ".m3u8") return "application/vnd.apple.mpegurl";
+  if (ext === ".ts") return "video/mp2t";
+  return "application/octet-stream";
+};
+
+const safeJoin = (base, ...parts) => {
+  const target = path.normalize(path.join(base, ...parts));
+  if (!target.startsWith(base)) return null;
+  return target;
 };
 
 const csvEscape = (value) => {
@@ -151,6 +195,72 @@ const writeCsv = (header, rows, targetPath) => {
     ...rows.map((row) => header.map((key) => csvEscape(row[key])).join(",")),
   ];
   fs.writeFileSync(targetPath, `${lines.join("\n")}\n`, "utf-8");
+};
+
+const safeParseJson = (raw) => {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    try {
+      let dataStr = raw.replace(/\\"/g, '"');
+      if (dataStr.startsWith('"') && dataStr.endsWith('"')) {
+        dataStr = dataStr.slice(1, -1);
+      }
+      return JSON.parse(dataStr);
+    } catch {
+      return null;
+    }
+  }
+};
+
+const getProfileByUsername = (username) => {
+  ensureDataFiles();
+  const content = fs.readFileSync(profilesPath, "utf-8");
+  const profiles = parseCsv(content);
+  return profiles.rows.find((row) => row.username === username) || null;
+};
+
+const getScaleResultsByUsername = (username) => {
+  ensureDataFiles();
+  const rawData = fs.readFileSync(resultsPath, "utf-8");
+  const lines = rawData.split("\n").filter((l) => l.trim() !== "");
+  const results = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const values = parseCsvLine(lines[i]);
+    if (values.length >= 4 && values[1] === "scale" && values[0] === username) {
+      const parsed = safeParseJson(values[2]);
+      if (parsed) {
+        results.push({
+          username: values[0],
+          createdAt: values[3],
+          data: parsed,
+        });
+      }
+    }
+  }
+  return results;
+};
+
+const getTaskResultsByUsername = (username) => {
+  ensureDataFiles();
+  const rawData = fs.readFileSync(resultsPath, "utf-8");
+  const lines = rawData.split("\n").filter((l) => l.trim() !== "");
+  const results = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const values = parseCsvLine(lines[i]);
+    if (values.length >= 4 && values[1] === "task" && values[0] === username) {
+      const parsed = safeParseJson(values[2]);
+      if (parsed) {
+        results.push({
+          username: values[0],
+          createdAt: values[3],
+          data: parsed,
+        });
+      }
+    }
+  }
+  return results;
 };
 
 const upsertProfile = ({ username, gender, age, grade }) => {
@@ -617,11 +727,722 @@ function getScaleName(scaleId) {
     'BDI': '贝克抑郁量表',
     'SCL-90': '症状自评量表',
     'SDS': '抑郁自评量表',
-    'SAS': '焦虑自评量表'
+    'SAS': '焦虑自评量表',
+    'ERQ': '情绪调节问卷',
+    'NET_ADDICT': '青少年上网成瘾自评量表',
+    'BULLYING_SIMPLE': '同伴相处小问答',
+    'PHQ9_CHILD': 'PHQ-9 抑郁量表'
   };
 
   return scaleNames[scaleId] || scaleId;
 }
+
+const getThemeScaleMap = (ageNumber) => {
+  const isLowAge = ageNumber === 8 || ageNumber === 9;
+  return {
+    emotion_forest: isLowAge ? ["PHQ9_CHILD"] : ["DASS21", "ANHEDONIA", "ERQ"],
+    digital_island: ["NET_ADDICT"],
+    stress_sea: ["ACADEMIC_BURNOUT", "SCHOOL_AVERSION"],
+    confidence_garden: isLowAge ? ["BULLYING_SIMPLE"] : ["BULLYING"],
+    sleep_planet: ["SRSS"],
+  };
+};
+
+const getLatestScalesById = (scaleResults) => {
+  const latest = {};
+  for (const r of scaleResults) {
+    const scaleId = r.data?.scaleId;
+    if (!scaleId) continue;
+    if (!latest[scaleId] || latest[scaleId].createdAt < r.createdAt) {
+      latest[scaleId] = r;
+    }
+  }
+  return latest;
+};
+
+const getLatestTasksById = (taskResults) => {
+  const latest = {};
+  for (const r of taskResults) {
+    const taskId = r.data?.taskId;
+    if (!taskId) continue;
+    if (!latest[taskId] || latest[taskId].createdAt < r.createdAt) {
+      latest[taskId] = r;
+    }
+  }
+  return latest;
+};
+
+const parseDateSafe = (value) => {
+  const ts = Date.parse(value);
+  return Number.isNaN(ts) ? null : new Date(ts);
+};
+
+const summarizeTrend = (items, valueGetter) => {
+  const sorted = [...items].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const recent3 = sorted.slice(-3).map((it) => ({
+    at: it.createdAt,
+    value: valueGetter(it),
+  }));
+
+  const now = Date.now();
+  const avgWithin = (days) => {
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    const values = sorted
+      .map((it) => ({ date: parseDateSafe(it.createdAt), value: valueGetter(it) }))
+      .filter((it) => it.date && it.date.getTime() >= cutoff && typeof it.value === "number");
+    if (!values.length) return null;
+    const sum = values.reduce((acc, it) => acc + it.value, 0);
+    return Number((sum / values.length).toFixed(2));
+  };
+
+  return {
+    recent3,
+    avg7d: avgWithin(7),
+    avg30d: avgWithin(30),
+  };
+};
+
+const getDASSSeverityRank = (label) => {
+  const map = {
+    "正常": 0,
+    "轻度": 1,
+    "中度": 2,
+    "重度": 3,
+    "极重度": 4,
+  };
+  return map[label] ?? -1;
+};
+
+const detectSelfHarmSignals = (text) => {
+  if (!text) return false;
+  const patterns = [
+    "不想活",
+    "活着没意思",
+    "想消失",
+    "想伤害自己",
+    "想结束",
+    "自伤",
+    "自杀",
+    "结束生命",
+  ];
+  return patterns.some((p) => text.includes(p));
+};
+
+const calcSuicideRiskStage = ({ latestScales, latestTasks, userText }) => {
+  const signals = [];
+  const phq9 = latestScales.PHQ9_CHILD?.data;
+  const dass = latestScales.DASS21?.data;
+  const srs = latestScales.SRSS?.data;
+  const bullying = latestScales.BULLYING?.data || latestScales.BULLYING_SIMPLE?.data;
+  const burnout = latestScales.ACADEMIC_BURNOUT?.data;
+  const aversion = latestScales.SCHOOL_AVERSION?.data;
+
+  const phq9Total = Number(phq9?.score?.total);
+  const phq9Item9 = Number(phq9?.score?.item9);
+  const dassDepRank = getDASSSeverityRank(dass?.level?.depression);
+  const dassAnxRank = getDASSSeverityRank(dass?.level?.anxiety);
+  const dassStressRank = getDASSSeverityRank(dass?.level?.stress);
+  const srsLevel = srs?.level?.total || "";
+  const srsModeratePlus = srsLevel.includes("中度") || srsLevel.includes("重度");
+  const bullyingConcern = Boolean(bullying?.flags?.hasConcern || bullying?.flags?.victim || bullying?.flags?.bully);
+
+  const moderateScaleCount = [
+    phq9Total >= 10,
+    dassDepRank >= 2,
+    srsModeratePlus,
+    bullyingConcern,
+    aversion?.flags?.riskLevel === "medium" || aversion?.flags?.riskLevel === "high",
+  ].filter(Boolean).length;
+
+  const directSignal = detectSelfHarmSignals(userText);
+  if (directSignal) {
+    signals.push("user_direct_signal");
+  }
+  if (phq9Total >= 20 || dassDepRank >= 3) {
+    signals.push("severe_mood_scale");
+  }
+
+  if (directSignal || phq9Total >= 20 || dassDepRank >= 3) {
+    return { stage: 3, signals };
+  }
+
+  const stage2Triggers = [];
+  if (phq9Total >= 10 && phq9Item9 > 0) stage2Triggers.push("phq9_item9");
+  if (dassDepRank >= 2) stage2Triggers.push("dass_depression_moderate");
+  if (dassAnxRank >= 3 || dassStressRank >= 3) stage2Triggers.push("dass_anx_stress_severe");
+  if (srsModeratePlus) stage2Triggers.push("sleep_moderate");
+  if (bullyingConcern) stage2Triggers.push("bullying");
+  if (moderateScaleCount >= 2) stage2Triggers.push("multi_domain");
+  if (burnout?.score?.mean >= 3) stage2Triggers.push("burnout_mean_high");
+  if (aversion?.flags?.riskLevel === "medium" || aversion?.flags?.riskLevel === "high") stage2Triggers.push("school_aversion");
+
+  if (stage2Triggers.length) {
+    return { stage: 2, signals: stage2Triggers };
+  }
+
+  return { stage: 1, signals: [] };
+};
+
+const extractJsonBlock = (text) => {
+  if (!text) return null;
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+};
+
+const callReportAI = async (input) => {
+  if (!process.env.DASHSCOPE_API_KEY) return null;
+  const model = process.env.DASHSCOPE_MODEL || "qwen-max";
+  const system = [
+    "你是心理报告撰写助手，请根据输入量表数据生成报告解读。",
+    "输出必须是 JSON，且只包含以下字段：",
+    "overallConclusion, themeSummaries, scaleInterpretations, riskWarnings, comprehensiveAnalysis, interventions。",
+    "overallConclusion 包含 stableAreas, attentionAreas, highRiskAreas。",
+    "themeSummaries 为主题名到简短总结的映射。",
+    "scaleInterpretations 为 scaleId 到解释文字的映射。",
+    "interventions 包含 daily, homeSchool, professional 三个字段。",
+    "用中文，避免诊断性结论，强调支持性建议。",
+  ].join("\n");
+
+  const user = `输入数据：\n${JSON.stringify(input)}`;
+
+  const resp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: 0.4,
+    }),
+  });
+
+  if (!resp.ok) {
+    return null;
+  }
+  const data = await resp.json();
+  const text = data?.choices?.[0]?.message?.content || "";
+  return extractJsonBlock(text);
+};
+
+const RELAX_RESOURCE_CATALOG = [
+  { name: "放松空间总览", link: "#relax" },
+  { name: "儿童冥想 · 正念大叔", link: "#relax-meditation" },
+  { name: "脑波音乐 · 频段列表", link: "#relax-binaural" },
+];
+
+const callStatusAI = async (input) => {
+  if (!process.env.DASHSCOPE_API_KEY) return null;
+  const model = process.env.DASHSCOPE_MODEL || "qwen-max";
+  const system = [
+    "你是心理健康陪伴系统的分析助手。",
+    "根据输入的量表与任务结果，生成当前状态摘要与对话追问建议。",
+    "输出必须是 JSON，且只包含以下字段：",
+    "statusSummary, keySignals, suggestedQuestions, supportSuggestions, resourceRecommendations。",
+    "statusSummary 为简短中文摘要（2-4 句）。",
+    "keySignals 为数组，列出当前主要风险/优势要点。",
+    "suggestedQuestions 为数组，2-4 条柔性追问。",
+    "supportSuggestions 为数组，2-4 条支持性建议（不含诊断）。",
+    "resourceRecommendations 为数组，仅可从给定资源库中选择，并返回 {name, link, reason}。",
+    "如果资源库不合适，请返回空数组。",
+    "避免诊断性措辞。",
+    `资源库：${JSON.stringify(RELAX_RESOURCE_CATALOG)}`,
+  ].join("\n");
+
+  const user = `输入数据：\n${JSON.stringify(input)}`;
+  const resp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      temperature: 0.4,
+    }),
+  });
+
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const text = data?.choices?.[0]?.message?.content || "";
+  return extractJsonBlock(text);
+};
+
+const buildReportData = async (username) => {
+  const profile = getProfileByUsername(username) || {};
+  const ageNumber = Number(String(profile.age || "").replace(/[^\d]/g, ""));
+  const themeMap = getThemeScaleMap(ageNumber);
+  const scaleResults = getScaleResultsByUsername(username);
+  const latestScales = getLatestScalesById(scaleResults);
+
+  const scalesPayload = {};
+  Object.keys(latestScales).forEach((scaleId) => {
+    const item = latestScales[scaleId];
+    const rawScore = item.data?.score || {};
+    let score = { ...rawScore };
+    if (scaleId === "ERQ") {
+      const supMean = Number(rawScore.suppression_mean);
+      if (!Number.isNaN(supMean)) {
+        score = {
+          ...score,
+          suppression_reverse_mean: Number((8 - supMean).toFixed(2)),
+        };
+      }
+    }
+    scalesPayload[scaleId] = {
+      scaleId,
+      scaleName: getScaleName(scaleId),
+      createdAt: item.createdAt,
+      score,
+      level: item.data?.level || {},
+      flags: item.data?.flags || {},
+      answers: item.data?.answers || {},
+    };
+  });
+
+  const aiInput = {
+    profile: {
+      username,
+      age: profile.age || "",
+      grade: profile.grade || "",
+      gender: profile.gender || "",
+    },
+    themes: themeMap,
+    scales: scalesPayload,
+  };
+
+  const aiResult = await callReportAI(aiInput);
+
+  const content = {
+    overallConclusion: aiResult?.overallConclusion || {
+      stableAreas: "",
+      attentionAreas: "",
+      highRiskAreas: "",
+    },
+    themeSummaries: aiResult?.themeSummaries || {},
+    scaleInterpretations: aiResult?.scaleInterpretations || {},
+    riskWarnings: aiResult?.riskWarnings || "",
+    comprehensiveAnalysis: aiResult?.comprehensiveAnalysis || "",
+    interventions: aiResult?.interventions || {
+      daily: "保持规律作息\n控制夜间电子产品使用\n增加运动与户外活动\n鼓励表达情绪与寻求支持",
+      homeSchool: "家长保持非指责式沟通\n班主任关注课堂状态与同伴互动\n必要时安排心理老师随访",
+      professional: "若风险持续或加重，建议进一步专业评估\n若出现明显危机信号，应尽快联系专业心理/医疗资源",
+    },
+    notes:
+      "本报告为自动生成的筛查性反馈，最终解释需由专业人员结合实际情况完成。",
+  };
+
+  return {
+    id: `${username}_${Date.now()}`,
+    username,
+    version: "v1",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    profile: {
+      username,
+      age: profile.age || "",
+      grade: profile.grade || "",
+      gender: profile.gender || "",
+    },
+    themeMap,
+    scales: scalesPayload,
+    content,
+  };
+};
+
+const getScaleValueForTrend = (scaleData) => {
+  if (!scaleData) return null;
+  const score = scaleData.score || {};
+  if (typeof score.total === "number") return score.total;
+  if (typeof score.mean === "number") return score.mean;
+  if (typeof score.depression === "number" && typeof score.anxiety === "number" && typeof score.stress === "number") {
+    return score.depression + score.anxiety + score.stress;
+  }
+  if (typeof score.reappraisal_mean === "number") return score.reappraisal_mean;
+  if (typeof score.suppression_mean === "number") return score.suppression_mean;
+  return null;
+};
+
+const getTaskValueForTrend = (taskData) => {
+  if (!taskData) return null;
+  const summary = taskData.summary || {};
+  if (typeof summary.accuracy === "number") return summary.accuracy;
+  if (typeof summary.meanRT === "number") return summary.meanRT;
+  return null;
+};
+
+const buildAiContextData = async (username, userText = "") => {
+  const profile = getProfileByUsername(username) || {};
+  const scaleResults = getScaleResultsByUsername(username);
+  const taskResults = getTaskResultsByUsername(username);
+  const latestScales = getLatestScalesById(scaleResults);
+  const latestTasks = getLatestTasksById(taskResults);
+
+  const scalesPayload = {};
+  Object.keys(latestScales).forEach((scaleId) => {
+    const item = latestScales[scaleId];
+    scalesPayload[scaleId] = {
+      scaleId,
+      scaleName: getScaleName(scaleId),
+      createdAt: item.createdAt,
+      score: item.data?.score || {},
+      level: item.data?.level || {},
+      flags: item.data?.flags || {},
+    };
+  });
+
+  const tasksPayload = {};
+  Object.keys(latestTasks).forEach((taskId) => {
+    const item = latestTasks[taskId];
+    tasksPayload[taskId] = {
+      taskId,
+      createdAt: item.createdAt,
+      summary: item.data?.summary || {},
+    };
+  });
+
+  const scaleTrends = {};
+  const scaleById = {};
+  for (const r of scaleResults) {
+    const scaleId = r.data?.scaleId;
+    if (!scaleId) continue;
+    if (!scaleById[scaleId]) scaleById[scaleId] = [];
+    scaleById[scaleId].push(r);
+  }
+  Object.keys(scaleById).forEach((scaleId) => {
+    scaleTrends[scaleId] = summarizeTrend(scaleById[scaleId], (it) => getScaleValueForTrend(it.data));
+  });
+
+  const taskTrends = {};
+  const taskById = {};
+  for (const r of taskResults) {
+    const taskId = r.data?.taskId;
+    if (!taskId) continue;
+    if (!taskById[taskId]) taskById[taskId] = [];
+    taskById[taskId].push(r);
+  }
+  Object.keys(taskById).forEach((taskId) => {
+    taskTrends[taskId] = summarizeTrend(taskById[taskId], (it) => getTaskValueForTrend(it.data));
+  });
+
+  const risk = calcSuicideRiskStage({
+    latestScales,
+    latestTasks,
+    userText,
+  });
+
+  const aiInput = {
+    profile: {
+      username,
+      age: profile.age || "",
+      grade: profile.grade || "",
+      gender: profile.gender || "",
+    },
+    scales: scalesPayload,
+    tasks: tasksPayload,
+    trends: {
+      scales: scaleTrends,
+      tasks: taskTrends,
+    },
+    riskStage: risk,
+  };
+
+  const aiSummary = await callStatusAI(aiInput);
+
+  return {
+    profile: aiInput.profile,
+    scales: scalesPayload,
+    tasks: tasksPayload,
+    trends: aiInput.trends,
+    risk,
+    aiSummary,
+  };
+};
+
+const renderReportHtml = (report) => {
+  const profile = report.profile || {};
+  const content = report.content || {};
+  const themeSummaries = content.themeSummaries || {};
+  const scaleInterpretations = content.scaleInterpretations || {};
+
+  const themeRows = [
+    ["情绪森林", "情绪状态", themeSummaries.emotion_forest || ""],
+    ["数字小岛", "网络使用", themeSummaries.digital_island || ""],
+    ["学海破浪/鸭梨海", "学业与压力", themeSummaries.stress_sea || ""],
+    ["自信花园", "自我认同与人际", themeSummaries.confidence_garden || ""],
+    ["睡眠星球", "睡眠与恢复", themeSummaries.sleep_planet || ""],
+  ];
+
+  const renderScale = (scaleId) => {
+    const scale = report.scales?.[scaleId];
+    if (!scale) return "";
+    const score = scale.score || {};
+    const level = scale.level || {};
+    const interp = scaleInterpretations[scaleId] || "";
+    const extraLines = [];
+    if (scaleId === "DASS21") {
+      extraLines.push(`抑郁：${score.depression ?? "-" }（${level.depression || "-"})`);
+      extraLines.push(`焦虑：${score.anxiety ?? "-" }（${level.anxiety || "-"})`);
+      extraLines.push(`压力：${score.stress ?? "-" }（${level.stress || "-"})`);
+    }
+    if (scaleId === "PHQ9_CHILD") {
+      extraLines.push(`第9题：${score.item9 ?? "-"}`);
+      extraLines.push(`分级：${level.severity || "-"}`);
+    }
+    if (scaleId === "ANHEDONIA") {
+      extraLines.push(`总分：${score.total ?? "-"}`);
+      extraLines.push(`平均分：${score.mean ?? "-"}`);
+    }
+    if (scaleId === "ERQ") {
+      extraLines.push(`认知重评分：${score.reappraisal_mean ?? "-"}`);
+      extraLines.push(`表达抑制分：${score.suppression_mean ?? "-"}`);
+      if (score.suppression_reverse_mean !== undefined) {
+        extraLines.push(`表达抑制分（反向）：${score.suppression_reverse_mean}`);
+      }
+    }
+    if (scaleId === "NET_ADDICT") {
+      extraLines.push(`总分：${score.total ?? "-"}`);
+      extraLines.push(`症状维度：${score.symptom ?? "-"}`);
+      extraLines.push(`诱因维度：${score.cause ?? "-"}`);
+      extraLines.push(`阈值：${score.threshold ?? 45}`);
+    }
+    if (scaleId === "ACADEMIC_BURNOUT") {
+      extraLines.push(`总分：${score.total ?? "-"}`);
+      extraLines.push(`均分：${score.mean ?? "-"}`);
+    }
+    if (scaleId === "SCHOOL_AVERSION") {
+      extraLines.push(`均分：${score.mean ?? "-"}`);
+      extraLines.push(`分级：${level.total || "-"}`);
+    }
+    if (scaleId === "BULLYING" || scaleId === "BULLYING_SIMPLE") {
+      extraLines.push(`结果分类：${level.role || level.summary || "-"}`);
+    }
+    if (scaleId === "SRSS") {
+      extraLines.push(`总分：${score.total ?? "-"}`);
+      extraLines.push(`分级：${level.total || "-"}`);
+    }
+    return `
+      <div class="section">
+        <div class="section-title">${scale.scaleName || scaleId}</div>
+        <div class="section-body">
+          <div>总分：${score.total ?? "-"}</div>
+          <div>分级：${level.severity || level.status || level.total || "-"}</div>
+          ${extraLines.map((l) => `<div>${l}</div>`).join("")}
+          <div class="text-block">解释：${interp || "-"}</div>
+        </div>
+      </div>
+    `;
+  };
+
+  return `
+  <html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body { font-family: "Helvetica Neue", Arial, sans-serif; color: #333; margin: 24px; }
+      h1, h2, h3 { margin: 0 0 8px; }
+      .cover { border-bottom: 2px solid #eee; padding-bottom: 16px; margin-bottom: 24px; }
+      .section { margin-bottom: 20px; }
+      .section-title { font-weight: 700; margin-bottom: 6px; }
+      .table { width: 100%; border-collapse: collapse; }
+      .table th, .table td { border: 1px solid #ddd; padding: 6px 8px; font-size: 12px; }
+      .text-block { white-space: pre-wrap; margin-top: 6px; }
+      .muted { color: #666; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="cover">
+      <h1>成长探索心理测评专业报告</h1>
+      <div class="muted">受测者编号：${report.username}</div>
+      <div class="muted">姓名/昵称：${report.username}</div>
+      <div class="muted">年龄：${profile.age || "-"}</div>
+      <div class="muted">年级：${profile.grade || "-"}</div>
+      <div class="muted">性别：${profile.gender || "-"}</div>
+      <div class="muted">测评日期：${report.createdAt?.split("T")[0] || "-"}</div>
+      <div class="muted">报告生成日期：${report.updatedAt?.split("T")[0] || "-"}</div>
+      <div class="muted">报告版本：${report.version}</div>
+      <div class="muted">本报告用于心理健康筛查、成长支持与教育辅导参考，不作为医学诊断或临床诊断依据。</div>
+    </div>
+
+    <div class="section">
+      <h2>总体概览</h2>
+      <table class="table">
+        <thead><tr><th>主题</th><th>心理维度</th><th>备注</th></tr></thead>
+        <tbody>
+          ${themeRows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2] || "-"}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="text-block">相对稳定领域：${content.overallConclusion?.stableAreas || "-"}</div>
+      <div class="text-block">建议关注领域：${content.overallConclusion?.attentionAreas || "-"}</div>
+      <div class="text-block">重点关注领域：${content.overallConclusion?.highRiskAreas || "-"}</div>
+    </div>
+
+    <div class="section">
+      <h2>分主题结果详情</h2>
+      ${renderScale("DASS21")}
+      ${renderScale("PHQ9_CHILD")}
+      ${renderScale("ANHEDONIA")}
+      ${renderScale("ERQ")}
+      ${renderScale("NET_ADDICT")}
+      ${renderScale("ACADEMIC_BURNOUT")}
+      ${renderScale("SCHOOL_AVERSION")}
+      ${renderScale("BULLYING")}
+      ${renderScale("BULLYING_SIMPLE")}
+      ${renderScale("SRSS")}
+    </div>
+
+    <div class="section">
+      <h2>风险预警</h2>
+      <div class="text-block">${content.riskWarnings || "-"}</div>
+    </div>
+
+    <div class="section">
+      <h2>综合分析</h2>
+      <div class="text-block">${content.comprehensiveAnalysis || "-"}</div>
+    </div>
+
+    <div class="section">
+      <h2>干预建议</h2>
+      <div class="text-block">${content.interventions?.daily || "-"}</div>
+      <div class="text-block">${content.interventions?.homeSchool || "-"}</div>
+      <div class="text-block">${content.interventions?.professional || "-"}</div>
+    </div>
+
+    <div class="section">
+      <h2>报告尾注</h2>
+      <div class="text-block">${content.notes || "-"}</div>
+    </div>
+  </body>
+  </html>
+  `;
+};
+
+const generateReportPdf = async (report, pdfPath) => {
+  const html = renderReportHtml(report);
+  const browser = await puppeteer.launch({
+    headless: "new",
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.pdf({ path: pdfPath, format: "A4", printBackground: true });
+  } finally {
+    await browser.close();
+  }
+};
+
+// 管理员：报告查询与生成
+app.get("/api/admin/report/user/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    const index = readReportsIndex();
+    const reports = index.filter((r) => r.username === username);
+    return res.json({ reports });
+  } catch (error) {
+    console.error("Get reports error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/admin/report/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = readReportsIndex();
+    const record = index.find((r) => r.id === id);
+    if (!record) return res.status(404).json({ error: "Report not found" });
+    const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
+    return res.json(report);
+  } catch (error) {
+    console.error("Get report error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/admin/report/generate", async (req, res) => {
+  try {
+    const { username } = req.body || {};
+    if (!username) return res.status(400).json({ error: "Missing username" });
+
+    const report = await buildReportData(username);
+    const jsonPath = path.join(reportsDir, `${report.id}.json`);
+    const pdfPath = path.join(reportsDir, `${report.id}.pdf`);
+    fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2), "utf-8");
+
+    const index = readReportsIndex();
+    index.unshift({
+      id: report.id,
+      username,
+      createdAt: report.createdAt,
+      updatedAt: report.updatedAt,
+      jsonPath,
+      pdfPath,
+    });
+    writeReportsIndex(index);
+
+    return res.json(report);
+  } catch (error) {
+    console.error("Generate report error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.put("/api/admin/report/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body || {};
+    const index = readReportsIndex();
+    const record = index.find((r) => r.id === id);
+    if (!record) return res.status(404).json({ error: "Report not found" });
+
+    const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
+    report.content = content || report.content;
+    report.updatedAt = new Date().toISOString();
+    fs.writeFileSync(record.jsonPath, JSON.stringify(report, null, 2), "utf-8");
+
+    record.updatedAt = report.updatedAt;
+    writeReportsIndex(index);
+
+    return res.json(report);
+  } catch (error) {
+    console.error("Update report error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/admin/report/:id/pdf", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = readReportsIndex();
+    const record = index.find((r) => r.id === id);
+    if (!record) return res.status(404).json({ error: "Report not found" });
+
+    if (!fs.existsSync(record.pdfPath)) {
+      const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
+      await generateReportPdf(report, record.pdfPath);
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+    return res.sendFile(record.pdfPath);
+  } catch (error) {
+    console.error("Generate report pdf error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 
 
@@ -640,6 +1461,164 @@ app.post("/api/profile", async (req, res) => {
   } catch (error) {
     console.error('Profile update error:', error);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get("/api/profile/:username", async (req, res) => {
+  try {
+    const { username } = req.params || {};
+    if (!username) {
+      return res.status(400).json({ error: "Missing username" });
+    }
+
+    const profilesContent = fs.readFileSync(profilesPath, 'utf-8');
+    const profiles = parseCsv(profilesContent);
+    const found = profiles.rows.find((row) => row.username === username);
+
+    if (!found) {
+      return res.status(404).json({ error: "Profile not found" });
+    }
+
+    return res.json({
+      username: found.username,
+      gender: found.gender || '',
+      age: found.age || '',
+      grade: found.grade || '',
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 媒体资源列表（基础鉴权：仅要求有效用户名）
+app.get("/api/media/list/*", async (req, res) => {
+  try {
+    const { username } = req.query || {};
+    if (!username) {
+      return res.status(401).json({ error: "Missing username" });
+    }
+    const users = readUsers();
+    const exists = users.some((u) => u.username === username);
+    if (!exists) {
+      return res.status(403).json({ error: "Invalid user" });
+    }
+
+    const subPath = req.params[0] || "";
+    const dirPath = safeJoin(mediaDir, subPath);
+    if (!dirPath || !fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
+      return res.status(404).json({ error: "Directory not found" });
+    }
+
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const files = entries
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .filter((name) => /\.(mp3|m4a|wav|mp4|webm|m3u8)$/i.test(name))
+      .map((name) => ({
+        name,
+        path: subPath ? `${subPath}/${name}` : name,
+      }));
+
+    const dirItems = entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .map((dirName) => {
+        const dirFull = path.join(dirPath, dirName);
+        const subEntries = fs.readdirSync(dirFull);
+        let m3u8Name = subEntries.find((n) => n.toLowerCase() === "index.m3u8");
+        if (!m3u8Name) {
+          m3u8Name = subEntries.find((n) => n.toLowerCase().endsWith(".m3u8"));
+        }
+        if (!m3u8Name) return null;
+        const fullPath = subPath ? `${subPath}/${dirName}/${m3u8Name}` : `${dirName}/${m3u8Name}`;
+        return { name: dirName, path: fullPath };
+      })
+      .filter(Boolean);
+
+    const allItems = [...dirItems, ...files];
+
+    allItems.sort((a, b) => {
+      const aMatch = a.name.match(/第(\d+)集|ep(\d+)/i);
+      const bMatch = b.name.match(/第(\d+)集|ep(\d+)/i);
+      const aNum = aMatch ? Number(aMatch[1] || aMatch[2]) : NaN;
+      const bNum = bMatch ? Number(bMatch[1] || bMatch[2]) : NaN;
+      if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+        return aNum - bNum;
+      }
+      return a.name.localeCompare(b.name, 'zh-CN');
+    });
+
+    return res.json({ files: allItems });
+  } catch (error) {
+    console.error("Media list error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// 媒体资源（基础鉴权：仅要求有效用户名）
+app.get("/api/media/*", async (req, res) => {
+  try {
+    const { username } = req.query || {};
+    if (!username) {
+      return res.status(401).json({ error: "Missing username" });
+    }
+    const users = readUsers();
+    const exists = users.some((u) => u.username === username);
+    if (!exists) {
+      return res.status(403).json({ error: "Invalid user" });
+    }
+
+    const subPath = req.params[0] || "";
+    const filePath = safeJoin(mediaDir, subPath);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    const stat = fs.statSync(filePath);
+    const range = req.headers.range;
+    const filename = path.basename(filePath);
+    const mimeType = getMimeType(filename);
+
+    if (path.extname(filename).toLowerCase() === ".m3u8") {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const patched = raw
+        .split("\n")
+        .map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) return line;
+          const sep = trimmed.includes("?") ? "&" : "?";
+          return `${trimmed}${sep}username=${encodeURIComponent(username)}`;
+        })
+        .join("\n");
+      res.writeHead(200, { "Content-Type": mimeType });
+      res.end(patched);
+      return;
+    }
+
+    if (range) {
+      const [startStr, endStr] = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(startStr, 10);
+      const end = endStr ? parseInt(endStr, 10) : stat.size - 1;
+      const chunkSize = end - start + 1;
+      res.writeHead(206, {
+        "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunkSize,
+        "Content-Type": mimeType,
+      });
+      fs.createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Length": stat.size,
+      "Content-Type": mimeType,
+    });
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    console.error("Media error:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -688,6 +1667,27 @@ app.post("/api/log", async (req, res) => {
   }
 });
 
+app.get("/api/ai/context", async (req, res) => {
+  try {
+    const { username } = req.query || {};
+    if (!username) {
+      return res.status(400).json({ error: "Missing username" });
+    }
+    const context = await buildAiContextData(username);
+    appendSystemLog({
+      type: "system",
+      event: "ai_context_generated",
+      endpoint: "/api/ai/context",
+      username,
+      risk_stage: context?.risk?.stage,
+    });
+    return res.json(context);
+  } catch (error) {
+    console.error("AI context error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   console.log("🚀 DASHSCOPE_API_KEY loaded:", process.env.DASHSCOPE_API_KEY ? "YES" : "MISSING!");
   if (process.env.DASHSCOPE_API_KEY) {
@@ -706,8 +1706,17 @@ app.post("/api/chat", async (req, res) => {
     }
 
     const chatStart = Date.now();
-    const { messages, userProfile, role } = req.body;
+    const { messages, userProfile, role, context } = req.body;
+    const username = req.body?.username || userProfile?.username;
     const model = process.env.DASHSCOPE_MODEL || "qwen-max";
+    const lastUserText = Array.isArray(messages)
+      ? [...messages].reverse().find((m) => m.role === "user")?.content
+      : "";
+    const computedContext = context || (username ? await buildAiContextData(username, lastUserText) : null);
+    const riskStage = computedContext?.risk?.stage || 1;
+    const riskSignals = computedContext?.risk?.signals || [];
+    const aiSummary = computedContext?.aiSummary || {};
+    const resourceCatalog = RELAX_RESOURCE_CATALOG;
 
     // 1) 拼 system prompt：把"非诊断/未成年人/风险引导"写死在后端
     const system = `
@@ -730,6 +1739,31 @@ app.post("/api/chat", async (req, res) => {
 # 当前用户信息
 年龄：${userProfile?.age || ""}；年级：${userProfile?.grade || ""}；性别：${userProfile?.gender || ""}。
 请根据年级调整语气（小学多用鼓励和比喻，高中生可以多一些平等的情绪梳理） 。
+
+# 当前状态摘要
+${aiSummary?.statusSummary || "暂无自动摘要。"}
+
+# 关键提示
+${Array.isArray(aiSummary?.keySignals) ? aiSummary.keySignals.map((x) => `- ${x}`).join("\n") : ""}
+
+# 推荐资源库（只能从此列表中选择）
+${resourceCatalog.map((r) => `- ${r.name}：${r.link}`).join("\n")}
+
+# 自伤风险分级策略
+当前分级：${riskStage}；信号：${riskSignals.join(", ") || "无"}。
+一级（不主动问）：整体低风险时，不直接问自伤相关问题。
+二级（柔性探索）：当出现中度及以上情绪/睡眠/厌学/欺凌等风险时，先以关怀式追问，例如：
+“当情绪很难受的时候，你一般会怎么应对？”“最近有没有出现过很强烈的无助感或想逃开的感觉？”
+三级（直接筛查）：当用户表达明显绝望/自伤想法，或量表显示重度风险时，直接问：
+“我想认真确认一件事：最近有没有出现过伤害自己的想法？”
+“最近有没有想过不想活了，或者希望自己消失？”
+如果用户回答“有”，继续问频率、是否想过方式、是否准备过工具、是否一个人、是否有可信任的大人。
+
+# 输出要求
+1. 先用 1-2 句解释当前状态（非诊断）。
+2. 追加 1-2 个温和追问（根据风险分级）。
+3. 给出 1-3 条可执行建议。
+4. 如适合，给出 1-2 条资源推荐，必须使用上面的链接。
 `;
 
     // 2) 调用 DashScope OpenAI 兼容接口

@@ -7,7 +7,10 @@ import {
   Send,
   AlertCircle,
   BookOpen,
+  Star,
+  Share2,
 } from 'lucide-react';
+import Hls from 'hls.js';
 import logoImg from './assets/logo.png';
 import welcomeImg from './assets/welcome.png';
 import onboard1Img from './assets/onboard1.png';
@@ -21,6 +24,13 @@ import emotionSceneImg from './assets/theme-emotion-forest.png';
 import stressSceneImg from './assets/theme-stress-sea.png';
 import confidenceSceneImg from './assets/theme-confidence-garden.png';
 import sleepSceneImg from './assets/theme-sleep-planet.png';
+import relaxMeditationImg from './assets/relax/relax-meditation.png';
+import relaxBinauralImg from './assets/relax/relax-binaural.png';
+import waveAlphaImg from './assets/relax/wave-alpha.png';
+import waveBetaImg from './assets/relax/wave-beta.png';
+import waveGammaImg from './assets/relax/wave-gamma.png';
+import waveDeltaImg from './assets/relax/wave-delta.png';
+import waveThetaImg from './assets/relax/wave-theta.png';
 import { getScale } from "./scales/scaleBank";
 import ScaleRunner from "./scales/scaleRunner.jsx";
 import { listTasks } from "./tasks/taskBank";
@@ -61,6 +71,18 @@ const apiPost = async (path, body) => {
   return data;
 };
 
+const apiGet = async (path) => {
+  const resp = await fetch(`${API_BASE}${path}`);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(data?.error || 'Request failed');
+    err.status = resp.status;
+    err.code = data?.error || '';
+    throw err;
+  }
+  return data;
+};
+
 // --- 主要组件 ---
 export default function MindYaApp() {
   const [view, setView] = useState('splash'); // splash, welcome, onboarding, login, register, profile, main, admin-login, admin-dashboard
@@ -68,6 +90,26 @@ export default function MindYaApp() {
   const [currentUser, setCurrentUser] = useState('');
   const [messages, setMessages] = useState([]);
   const [admin, setAdmin] = useState(null);
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      const savedUser = localStorage.getItem('mindya_current_user');
+      if (!savedUser) return;
+
+      setCurrentUser(savedUser);
+      try {
+        const profile = await apiGet(`/api/profile/${savedUser}`);
+        setUser({ ...user, ...profile });
+        setView('main');
+      } catch (err) {
+        if (err.status === 404) {
+          setView('profile');
+        }
+      }
+    };
+
+    restoreSession();
+  }, []);
 
   // 1. 加载动画 [cite: 28]
   useEffect(() => {
@@ -89,7 +131,14 @@ export default function MindYaApp() {
             onLogin={async (username, password) => {
               await apiPost('/api/login', { username, password });
               setCurrentUser(username);
-              setView('profile');
+              localStorage.setItem('mindya_current_user', username);
+              try {
+                const profile = await apiGet(`/api/profile/${username}`);
+                setUser({ ...user, ...profile });
+                setView('main');
+              } catch (err) {
+                setView('profile');
+              }
             }}
             onRegister={() => setView('register')}
             onAdminLogin={() => setView('admin-login')}
@@ -101,6 +150,7 @@ export default function MindYaApp() {
             onRegister={async (username, password) => {
               await apiPost('/api/register', { username, password });
               setCurrentUser(username);
+              localStorage.setItem('mindya_current_user', username);
               setView('profile');
             }}
             onLogin={() => setView('login')}
@@ -111,12 +161,34 @@ export default function MindYaApp() {
           <ProfileScreen
             onComplete={async (data) => {
               await apiPost('/api/profile', { username: currentUser, ...data });
-              setUser({ ...user, ...data });
+              const profile = { ...user, ...data };
+              setUser(profile);
+              localStorage.setItem('mindya_user_profile', JSON.stringify(profile));
               setView('main');
             }}
           />
         );
-      case 'main': return <MainInterface user={user} username={currentUser} messages={messages} setMessages={setMessages} />;
+      case 'main':
+        return (
+          <MainInterface
+            user={user}
+            username={currentUser}
+            messages={messages}
+            setMessages={setMessages}
+            onUpdateProfile={(profile) => {
+              setUser(profile);
+              localStorage.setItem('mindya_user_profile', JSON.stringify(profile));
+            }}
+            onLogout={() => {
+              localStorage.removeItem('mindya_current_user');
+              localStorage.removeItem('mindya_user_profile');
+              setCurrentUser('');
+              setUser({ age: '', grade: '', gender: '', riskLevel: 'low' });
+              setMessages([]);
+              setView('login');
+            }}
+          />
+        );
       case 'admin-dashboard': return <AdminDashboard admin={admin} onLogout={() => { setAdmin(null); setView('login'); }} />;
       case 'admin-login':
         return <AdminLogin
@@ -567,13 +639,15 @@ function ProfileScreen({ onComplete }) {
   );
 }
 
-function MainInterface({ user, username }) {
+function MainInterface({ user, username, onUpdateProfile, onLogout }) {
   const [activeTab, setActiveTab] = useState('chat');
   const [menuOpen, setMenuOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [historyList, setHistoryList] = useState([]); // 存储历史列表
   const [currentConvId, setCurrentConvId] = useState(Date.now().toString()); // 当前对话ID
+  const [aiContext, setAiContext] = useState(null);
+  const [moreTarget, setMoreTarget] = useState(null);
   const scrollRef = useRef(null);
   const initializedRef = useRef(false);
 
@@ -584,6 +658,35 @@ function MainInterface({ user, username }) {
   };
 
   useEffect(() => { fetchHistory(); }, [username]);
+
+  useEffect(() => {
+    if (!username) return;
+    const loadContext = async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/ai/context?username=${encodeURIComponent(username)}`);
+        const data = await resp.json();
+        setAiContext(data);
+      } catch {
+        setAiContext(null);
+      }
+    };
+    loadContext();
+  }, [username]);
+
+  useEffect(() => {
+    const applyHash = () => {
+      const hash = window.location.hash || "";
+      if (hash.startsWith("#relax")) {
+        const parts = hash.split("-");
+        const target = parts[1] || "home";
+        setActiveTab("more");
+        setMoreTarget(target);
+      }
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+  }, []);
 
   // --- 核心：开启新对话的函数 ---
   const startNewChat = async () => {
@@ -599,7 +702,9 @@ function MainInterface({ user, username }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{ role: 'user', content: prompt }],
-          userProfile: user,
+          userProfile: { ...user, username },
+          username,
+          context: aiContext,
           role: '日常陪伴',
         }),
       });
@@ -663,7 +768,9 @@ function MainInterface({ user, username }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: [{ role: 'user', content: prompt }],
-            userProfile: user,
+            userProfile: { ...user, username },
+            username,
+            context: aiContext,
             role: '日常陪伴',
           }),
         });
@@ -699,7 +806,9 @@ function MainInterface({ user, username }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         messages: apiMessages,
-        userProfile: user,          // 你已有 user（age/grade/gender）:contentReference[oaicite:8]{index=8}
+        userProfile: { ...user, username },
+        username,
+        context: aiContext,
         role: "日常陪伴",
       }),
     });
@@ -779,7 +888,7 @@ function MainInterface({ user, username }) {
                   </div>
                 )}
                 <div className={`max-w-[75%] p-4 rounded-2xl shadow-sm ${m.sender === 'user' ? 'bg-[#4B342C] text-white' : 'bg-[#F4EFE8] text-[#4B3425]'}`}>
-                  {m.text}
+                  {renderChatText(m.text)}
                 </div>
                 {m.sender === 'user' && (
                   <div className="ml-2 h-15 w-15 rounded-full bg-[#CBBBAA] flex items-center justify-center text-white text-[20px]">
@@ -794,6 +903,15 @@ function MainInterface({ user, username }) {
 
         {activeTab === 'scale' && <ScaleHub username={username} user={user} />}
         {activeTab === 'games' && <GamesHub username={username} />}
+        {activeTab === 'more' && (
+          <MoreTab
+            user={user}
+            username={username}
+            onUpdateProfile={onUpdateProfile}
+            onLogout={onLogout}
+            initialTarget={moreTarget}
+          />
+        )}
       </div>
 
       {/* 底部输入框或导航 [cite: 70] */}
@@ -830,6 +948,611 @@ function NavBtn({ icon, label, active, onClick, activeColor = 'text-emerald-600'
   );
 }
 
+function renderChatText(text) {
+  if (!text) return null;
+  const parts = text.split(/(#[a-zA-Z0-9_-]+)/g);
+  return parts.map((part, idx) => {
+    if (/^#[a-zA-Z0-9_-]+$/.test(part)) {
+      return (
+        <a
+          key={`${part}-${idx}`}
+          href={part}
+          className="underline underline-offset-2 text-[#3B6EA8]"
+        >
+          {part}
+        </a>
+      );
+    }
+    return <span key={idx}>{part}</span>;
+  });
+}
+
+function MoreTab({ user, username, onUpdateProfile, onLogout, initialTarget }) {
+  const [view, setView] = useState('menu');
+  const [form, setForm] = useState({
+    gender: user?.gender || '',
+    age: user?.age || '',
+    grade: user?.grade || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    setForm({
+      gender: user?.gender || '',
+      age: user?.age || '',
+      grade: user?.grade || '',
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!initialTarget) return;
+    if (initialTarget === "meditation") {
+      setView("relax");
+    } else if (initialTarget === "binaural") {
+      setView("relax");
+    } else if (initialTarget === "home") {
+      setView("relax");
+    }
+  }, [initialTarget]);
+
+  const updateField = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const saveProfile = async () => {
+    if (!username) return;
+    setSaving(true);
+    setMsg('');
+    try {
+      await apiPost('/api/profile', { username, ...form });
+      const nextProfile = { ...user, ...form };
+      onUpdateProfile?.(nextProfile);
+      setMsg('已保存');
+    } catch (e) {
+      setMsg('保存失败，请稍后重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (view === 'relax') {
+    return (
+      <RelaxSpace
+        username={username}
+        onBack={() => setView('menu')}
+        initialTarget={initialTarget}
+      />
+    );
+  }
+
+  if (view === 'settings') {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setView('menu')}
+          className="text-sm text-[#8B7A6A]"
+        >
+          ← 返回
+        </button>
+
+        <div className="rounded-2xl bg-white border border-[#EFE7DE] p-4 shadow-sm space-y-2">
+          <div className="text-[#4B3425] font-semibold text-lg">设置</div>
+          <div className="text-xs text-[#8B7A6A]">账号：{username || '未登录'}</div>
+        </div>
+
+        <div className="rounded-2xl bg-white border border-[#EFE7DE] p-4 shadow-sm space-y-3">
+          <div className="text-sm text-[#4B3425] font-semibold">基本信息</div>
+          <div className="space-y-2 text-sm text-[#4B3425]">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-[#8B7A6A]">性别</label>
+              <select
+                value={form.gender}
+                onChange={(e) => updateField('gender', e.target.value)}
+                className="flex-1 rounded-xl border border-[#E8DED2] px-3 py-2 bg-white"
+              >
+                <option value="">未选择</option>
+                <option value="男生">男生</option>
+                <option value="女生">女生</option>
+                <option value="不便透露">不便透露</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-[#8B7A6A]">年龄</label>
+              <input
+                value={form.age}
+                onChange={(e) => updateField('age', e.target.value)}
+                className="flex-1 rounded-xl border border-[#E8DED2] px-3 py-2"
+                placeholder="如 13"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-[#8B7A6A]">年级</label>
+              <input
+                value={form.grade}
+                onChange={(e) => updateField('grade', e.target.value)}
+                className="flex-1 rounded-xl border border-[#E8DED2] px-3 py-2"
+                placeholder="如 初一"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={saveProfile}
+            disabled={saving}
+            className="w-full rounded-full bg-[#4B342C] text-white py-3 text-sm font-semibold disabled:opacity-60"
+          >
+            {saving ? '保存中...' : '保存修改'}
+          </button>
+          {msg && <div className="text-xs text-[#8B7A6A] text-center">{msg}</div>}
+        </div>
+
+        <button
+          onClick={onLogout}
+          className="w-full rounded-full bg-white border border-[#E8DED2] text-[#4B3425] py-3 text-sm font-semibold"
+        >
+          退出登录
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl bg-white border border-[#EFE7DE] p-4 shadow-sm space-y-2">
+        <div className="text-[#4B3425] font-semibold text-lg">更多</div>
+        <div className="text-xs text-[#8B7A6A]">选择一个功能进入</div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => setView('relax')}
+          className="rounded-2xl bg-[#F4EFE8] p-4 text-left shadow-sm border border-[#EFE7DE]"
+        >
+          <div className="text-sm font-semibold text-[#4B3425]">放松空间</div>
+          <div className="text-xs text-[#8B7A6A] mt-1">正念冥想 · 脑波音乐</div>
+        </button>
+        <button
+          onClick={() => setView('settings')}
+          className="rounded-2xl bg-white p-4 text-left shadow-sm border border-[#EFE7DE]"
+        >
+          <div className="text-sm font-semibold text-[#4B3425]">设置</div>
+          <div className="text-xs text-[#8B7A6A] mt-1">个人资料 · 退出登录</div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RelaxSpace({ username, onBack, initialTarget }) {
+  const [view, setView] = useState('home');
+  const [meditationList, setMeditationList] = useState([]);
+  const [binauralLists, setBinauralLists] = useState({});
+  const [activeWave, setActiveWave] = useState(null);
+  const [activeTrack, setActiveTrack] = useState(null);
+  const [activePlaylist, setActivePlaylist] = useState([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const audioRef = useRef(null);
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
+
+  const mediaUrl = (path) =>
+    `${API_BASE}/api/media/${path}?username=${encodeURIComponent(username || '')}`;
+
+  const listUrl = (path) =>
+    `${API_BASE}/api/media/list/${path}?username=${encodeURIComponent(username || '')}`;
+
+  const displayName = (filename) => {
+    const base = filename.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+    const epMatch = base.match(/^ep\s*(\d+)$/i);
+    if (epMatch) return `第 ${epMatch[1]} 集`;
+    return base;
+  };
+
+  const waves = [
+    {
+      id: 'alpha',
+      name: 'α波音乐（Alpha）',
+      desc: '清醒放松 · 轻专注',
+      color: '#8FB7AC',
+      art: waveAlphaImg,
+      height: 152,
+    },
+    {
+      id: 'theta',
+      name: 'θ波音乐（Theta）',
+      desc: '深度放松 · 冥想入门',
+      color: '#9C8EB6',
+      art: waveThetaImg,
+      height: 172,
+    },
+    {
+      id: 'beta',
+      name: 'β波音乐（Beta）',
+      desc: '专注在线 · 学习状态',
+      color: '#C7A27A',
+      art: waveBetaImg,
+      height: 160,
+    },
+    {
+      id: 'delta',
+      name: 'δ波音乐（Delta）',
+      desc: '睡前安静 · 深休息',
+      color: '#6B7C92',
+      art: waveDeltaImg,
+      height: 180,
+    },
+    {
+      id: 'gamma',
+      name: 'γ波音乐（Gamma）',
+      desc: '高唤醒 · 清晰思路',
+      color: '#CBB77A',
+      art: waveGammaImg,
+      height: 148,
+    },
+  ];
+
+  const loadMeditations = async () => {
+    try {
+      const resp = await fetch(listUrl('meditation/mind-uncle-hls'));
+      const data = await resp.json();
+      setMeditationList(Array.isArray(data.files) ? data.files : []);
+    } catch {
+      setMeditationList([]);
+    }
+  };
+
+  const loadBinaural = async (waveId) => {
+    if (binauralLists[waveId]) return;
+    try {
+      const resp = await fetch(listUrl(`binaural/${waveId}`));
+      const data = await resp.json();
+      setBinauralLists((prev) => ({
+        ...prev,
+        [waveId]: Array.isArray(data.files) ? data.files : [],
+      }));
+    } catch {
+      setBinauralLists((prev) => ({ ...prev, [waveId]: [] }));
+    }
+  };
+
+  useEffect(() => {
+    if (view === 'meditationList') {
+      loadMeditations();
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (!initialTarget) return;
+    if (initialTarget === "meditation") {
+      setView("meditationList");
+    } else if (initialTarget === "binaural") {
+      setView("binauralWaves");
+    } else if (initialTarget === "home") {
+      setView("home");
+    }
+  }, [initialTarget]);
+
+  const setTrackAt = (index) => {
+    const target = activePlaylist[index];
+    if (!target) return;
+    setActiveIndex(index);
+    setActiveTrack(target);
+  };
+
+  const openMeditationPlayer = (index) => {
+    setActivePlaylist(meditationList);
+    setActiveIndex(index);
+    setActiveTrack(meditationList[index]);
+    setView('meditationPlayer');
+  };
+
+  const openBinauralList = (wave) => {
+    setActiveWave(wave);
+    setView('binauralList');
+    loadBinaural(wave.id);
+  };
+
+  const openBinauralPlayer = (index) => {
+    const list = binauralLists[activeWave.id] || [];
+    setActivePlaylist(list);
+    setActiveIndex(index);
+    setActiveTrack(list[index]);
+    setView('binauralPlayer');
+  };
+
+  const playNext = () => {
+    const nextIndex = activeIndex + 1;
+    if (nextIndex >= activePlaylist.length) return;
+    setTrackAt(nextIndex);
+  };
+
+  const playPrev = () => {
+    const prevIndex = activeIndex - 1;
+    if (prevIndex < 0) return;
+    setTrackAt(prevIndex);
+  };
+
+  const toggleAudio = () => {
+    if (!audioRef.current) return;
+    if (audioRef.current.paused) {
+      audioRef.current.play();
+      setIsPlaying(true);
+    } else {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const toggleVideo = () => {
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play();
+    } else {
+      videoRef.current.pause();
+    }
+  };
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({ title: '放松空间', text: '分享一段放松内容' });
+    } else {
+      alert('已准备分享链接');
+    }
+  };
+
+  useEffect(() => {
+    if (view === 'binauralPlayer' && audioRef.current) {
+      audioRef.current.play().catch(() => {});
+    }
+  }, [activeTrack, view]);
+
+  useEffect(() => {
+    if (view !== 'meditationPlayer' || !videoRef.current || !activeTrack) return;
+    const videoEl = videoRef.current;
+    const src = mediaUrl(activeTrack.path);
+
+    if (Hls.isSupported()) {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+      const hls = new Hls();
+      hlsRef.current = hls;
+      hls.loadSource(src);
+      hls.attachMedia(videoEl);
+    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+      videoEl.src = src;
+    } else {
+      videoEl.src = src;
+    }
+
+    videoEl.play().catch(() => {});
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [activeTrack, view]);
+
+  if (view === 'home') {
+    return (
+      <div className="space-y-4">
+        <button onClick={onBack} className="text-sm text-[#8B7A6A]">
+          ← 返回
+        </button>
+        <div className="rounded-[36px] bg-[linear-gradient(180deg,#FCE2D6_0%,#F8D0C9_50%,#F6C5D3_100%)] p-4 shadow-sm">
+          <div className="text-[#4B3425] font-semibold text-lg">放松空间</div>
+          <div className="text-xs text-[#8B7A6A] mt-1">今天想做些什么？</div>
+          <div className="mt-4 columns-2 gap-3">
+            <button
+              onClick={() => setView('meditationList')}
+              className="mb-3 w-full break-inside-avoid rounded-[28px] bg-[#D7DDF3] p-3 text-left shadow-sm"
+            >
+              <div className="text-sm font-semibold text-[#2F3A62]">儿童冥想</div>
+              <div className="text-xs text-[#5B6A95] mt-1">正念大叔系列</div>
+              <div className="mt-3 rounded-2xl bg-white/60 p-2">
+                <img src={relaxMeditationImg} alt="儿童冥想插画" className="w-full h-auto" />
+              </div>
+            </button>
+            <button
+              onClick={() => setView('binauralWaves')}
+              className="mb-3 w-full break-inside-avoid rounded-[28px] bg-[#FCE3D8] p-3 text-left shadow-sm"
+            >
+              <div className="text-sm font-semibold text-[#7B4C3B]">脑波音乐</div>
+              <div className="text-xs text-[#9B6B58] mt-1">五种频段</div>
+              <div className="mt-3 rounded-2xl bg-white/60 p-2">
+                <img src={relaxBinauralImg} alt="脑波音乐插画" className="w-full h-auto" />
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'meditationList') {
+    return (
+      <div className="space-y-4">
+        <button onClick={() => setView('home')} className="text-sm text-[#8B7A6A]">
+          ← 返回
+        </button>
+        <div className="text-[#4B3425] font-semibold text-lg">儿童冥想 · 正念大叔</div>
+        <div className="space-y-3">
+          {meditationList.map((item, idx) => (
+            <button
+              key={item.name}
+              onClick={() => openMeditationPlayer(idx)}
+              className="w-full rounded-2xl bg-white border border-[#EFE7DE] p-4 text-left shadow-sm"
+            >
+              <div className="text-sm font-semibold text-[#4B3425]">
+                {(() => {
+                  const title = displayName(item.name);
+                  return title.startsWith("第 ") ? title : `第 ${idx + 1} 集 · ${title}`;
+                })()}
+              </div>
+              <div className="text-xs text-[#8B7A6A] mt-1">点击播放</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'meditationPlayer' && activeTrack) {
+    return (
+      <div
+        className="rounded-[32px] p-5 min-h-[520px] flex flex-col gap-4"
+        style={{ background: 'linear-gradient(180deg, #FAD7B2 0%, #F7C89A 100%)' }}
+      >
+        <div className="flex items-center justify-between text-[#4B3425]">
+          <button onClick={() => setView('meditationList')} className="h-9 w-9 rounded-full bg-white/70 flex items-center justify-center">
+            ←
+          </button>
+          <div className="text-sm font-semibold">儿童冥想</div>
+          <div className="flex items-center gap-2">
+            <button className="h-9 w-9 rounded-full bg-white/70 flex items-center justify-center" title="收藏">
+              <Star size={16} />
+            </button>
+            <button className="h-9 w-9 rounded-full bg-white/70 flex items-center justify-center" title="点赞">
+              <Heart size={16} />
+            </button>
+            <button className="h-9 w-9 rounded-full bg-white/70 flex items-center justify-center" onClick={handleShare} title="分享">
+              <Share2 size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <video
+            ref={videoRef}
+            className="w-full rounded-3xl shadow-lg bg-black"
+            onEnded={playNext}
+            onPlay={() => setIsVideoPlaying(true)}
+            onPause={() => setIsVideoPlaying(false)}
+            controls
+            playsInline
+          />
+          <div className="text-sm text-[#6C5B50]">
+            正念大叔 · 第 {activeIndex + 1} 集
+          </div>
+          <div className="flex items-center gap-4">
+            <button onClick={playPrev} className="h-10 w-10 rounded-full bg-white/80">«</button>
+            <button onClick={playNext} className="h-10 w-10 rounded-full bg-white/80">»</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'binauralWaves') {
+    return (
+      <div className="space-y-4 rounded-[32px] bg-[#F3E8DA] p-4">
+        <button onClick={() => setView('home')} className="text-sm text-[#8B7A6A]">
+          ← 返回
+        </button>
+        <div className="text-[#4B3425] font-semibold text-lg">脑波音乐</div>
+        <div className="columns-2 gap-3">
+          {waves.map((wave) => (
+            <button
+              key={wave.id}
+              onClick={() => openBinauralList(wave)}
+              className="mb-3 w-full break-inside-avoid rounded-2xl p-4 text-left shadow-sm relative overflow-hidden"
+              style={{ backgroundColor: wave.color, color: '#fff', minHeight: wave.height }}
+            >
+              <div className="text-sm font-semibold">{wave.name}</div>
+              <div className="text-xs opacity-80 mt-1">{wave.desc}</div>
+              <img
+                src={wave.art}
+                alt={`${wave.name} 插图`}
+                className="absolute bottom-0 right-0 w-20 h-auto"
+              />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'binauralList' && activeWave) {
+    const list = binauralLists[activeWave.id] || [];
+    return (
+      <div className="space-y-4">
+        <button onClick={() => setView('binauralWaves')} className="text-sm text-[#8B7A6A]">
+          ← 返回
+        </button>
+        <div className="text-[#4B3425] font-semibold text-lg">{activeWave.name}</div>
+        <div className="space-y-3">
+          {list.map((item, idx) => (
+            <button
+              key={item.name}
+              onClick={() => openBinauralPlayer(idx)}
+              className="w-full rounded-2xl bg-white border border-[#EFE7DE] p-4 text-left shadow-sm"
+            >
+              <div className="text-sm font-semibold text-[#4B3425]">
+                {displayName(item.name)}
+              </div>
+              <div className="text-xs text-[#8B7A6A] mt-1">点击播放</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'binauralPlayer' && activeTrack && activeWave) {
+    return (
+      <div
+        className="rounded-[32px] p-5 min-h-[520px] flex flex-col gap-4"
+        style={{ background: 'linear-gradient(180deg, #0B1F4B 0%, #0A2C6B 100%)' }}
+      >
+        <div className="flex items-center justify-between text-white">
+          <button onClick={() => setView('binauralList')} className="h-9 w-9 rounded-full bg-white/10 flex items-center justify-center">
+            ←
+          </button>
+          <div className="text-sm font-semibold">{activeWave.name}</div>
+          <div className="flex items-center gap-2">
+            <button className="h-9 w-9 rounded-full bg-white/10 flex items-center justify-center" title="收藏">
+              <Star size={16} />
+            </button>
+            <button className="h-9 w-9 rounded-full bg-white/10 flex items-center justify-center" title="点赞">
+              <Heart size={16} />
+            </button>
+            <button className="h-9 w-9 rounded-full bg-white/10 flex items-center justify-center" onClick={handleShare} title="分享">
+              <Share2 size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-white">
+          <div className="text-2xl font-semibold">Night Island</div>
+          <div className="text-xs opacity-70">SLEEP MUSIC</div>
+          <audio
+            ref={audioRef}
+            src={mediaUrl(activeTrack.path)}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={playNext}
+          />
+          <div className="flex items-center gap-4">
+            <button onClick={playPrev} className="h-10 w-10 rounded-full bg-white/10">«</button>
+            <button onClick={toggleAudio} className="h-14 w-14 rounded-full bg-white text-[#0B1F4B] font-bold">
+              {isPlaying ? "❚❚" : "▶︎"}
+            </button>
+            <button onClick={playNext} className="h-10 w-10 rounded-full bg-white/10">»</button>
+          </div>
+          <div className="text-sm opacity-70">{displayName(activeTrack.name)}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 // --- 量表 ---
 function ScaleHub({ username, user }) {
   const [view, setView] = useState("map");
@@ -841,18 +1564,18 @@ function ScaleHub({ username, user }) {
 
   const zones = [
     {
-      id: "courage_mountain",
-      label: "勇气山",
-      scaleIds: ["ERQ"],
+      id: "digital_island",
+      label: "数字小岛",
+      scaleIds: ["NET_ADDICT"],
       position: { top: "15%", left: "8%" },
       theme: {
-        title: "勇气山",
+        title: "数字小岛",
         bgColor: "#6A8D6F",
         textColor: "#3E2B22",
         sceneImg: courageSceneImg,
-        bubbleText: "小狐狸遇到难过的事情，会换个角度想想。你也是吗？",
-        tagline: "你遇到问题，会换个角度想想吗？",
-        ctaText: "登山看看 →",
+        bubbleText: "小狐狸最近有点沉迷屏幕，它想知道如何把节奏找回来。",
+        tagline: "一起看看上网节奏是否合适。",
+        ctaText: "上岛看看 →",
         bubbleStyle: { top: "10%", left: "44%", width: "46%" },
       },
     },
@@ -875,7 +1598,7 @@ function ScaleHub({ username, user }) {
     {
       id: "emotion_forest",
       label: "情绪森林",
-      scaleIds: ["DASS21", "ANHEDONIA"],
+      scaleIds: ["DASS21", "ANHEDONIA", "ERQ", "PHQ9_CHILD"],
       position: { top: "38%", left: "10%" },
       theme: {
         title: "情绪森林",
@@ -930,6 +1653,12 @@ function ScaleHub({ username, user }) {
   const allowedScaleIds = activeZone.scaleIds.filter((id) =>
     isScaleAllowed(getScale(id))
   );
+  const scopedScaleIds =
+    activeZone.id === "emotion_forest" && (numericAge === 8 || numericAge === 9)
+      ? ["PHQ9_CHILD"]
+      : activeZone.id === "confidence_garden" && (numericAge === 8 || numericAge === 9)
+      ? ["BULLYING_SIMPLE"]
+      : allowedScaleIds;
 
   const recordResult = (payload) => {
     if (!payload?.scaleId) return;
@@ -975,6 +1704,7 @@ function ScaleHub({ username, user }) {
     if (activeZone.id === "emotion_forest") {
       const dass = themeResults.DASS21;
       const anhedonia = themeResults.ANHEDONIA;
+      const erq = themeResults.ERQ;
       const dep = dass?.score?.depression ?? 0;
       const anx = dass?.score?.anxiety ?? 0;
       const stress = dass?.score?.stress ?? 0;
@@ -996,6 +1726,9 @@ function ScaleHub({ username, user }) {
         risk = "high";
         title = "森林最近有些持续阴天 🌫";
         desc = "如果这种状态持续了一段时间，\n可以考虑和信任的人聊聊。";
+      }
+      if (erq?.level?.strategy === "更偏向表达抑制") {
+        desc = `${desc}\n你可能更习惯把情绪先收起来，慢慢消化。`;
       }
       return (
         <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
@@ -1043,7 +1776,7 @@ function ScaleHub({ username, user }) {
     }
 
     if (activeZone.id === "confidence_garden") {
-      const bullying = themeResults.BULLYING;
+      const bullying = themeResults.BULLYING || themeResults.BULLYING_SIMPLE;
       const hasConcern = Boolean(bullying?.flags?.hasConcern);
       const risk = hasConcern ? "medium" : "low";
       const title = hasConcern ? "花园有些地方需要浇水 🌱" : "花园正在生长 🌼";
@@ -1088,24 +1821,26 @@ function ScaleHub({ username, user }) {
       );
     }
 
-    if (activeZone.id === "courage_mountain") {
-      const erq = themeResults.ERQ;
-      const summary = erq?.level?.summary;
-      const strategy = erq?.level?.strategy;
-      let title = "背包整理得很稳 🧭";
-      let desc = summary || "你有自己的调节方式，可以慢慢找到适合的节奏。";
+    if (activeZone.id === "digital_island") {
+      const net = themeResults.NET_ADDICT;
+      const total = net?.score?.total ?? 0;
       let risk = "low";
-      if (strategy === "更偏向表达抑制") {
+      let title = "海风很舒服 🌤";
+      let desc = "你的上网节奏目前比较平稳。";
+      if (total >= 36 && total <= 45) {
         risk = "medium";
-        title = "背包有点闷 🧳";
+        title = "潮位有点高 🌊";
+        desc = "最近线上时间可能有点多，试着给自己留些线下空档。";
       }
-      if (strategy === "更偏向认知重评") {
-        title = "背包更轻一些 🎒";
+      if (total > 45) {
+        risk = "high";
+        title = "潮位偏高 🌧";
+        desc = "线上活动占据了不少注意力，建议逐步调整节奏。";
       }
       return (
         <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
           <div className={`inline-flex px-3 py-1 rounded-full text-xs ${colorByRisk(risk)}`}>
-            勇气山
+            数字小岛
           </div>
           <div className="text-[#4B3425] font-semibold">{title}</div>
           <div className="text-sm text-[#6C5B50] whitespace-pre-line">{desc}</div>
@@ -1145,7 +1880,7 @@ function ScaleHub({ username, user }) {
 
   if (view === "intro") {
     const { theme } = activeZone;
-    const canStart = allowedScaleIds.length > 0;
+    const canStart = scopedScaleIds.length > 0;
     return (
       <div
         className="rounded-[28px] p-5 min-h-[560px] flex flex-col items-center text-center"
@@ -1185,8 +1920,8 @@ function ScaleHub({ username, user }) {
   }
 
   if (view === "scale") {
-    const scaleId = allowedScaleIds[currentScaleIndex];
-    const isLast = currentScaleIndex >= allowedScaleIds.length - 1;
+    const scaleId = scopedScaleIds[currentScaleIndex];
+    const isLast = currentScaleIndex >= scopedScaleIds.length - 1;
     return (
       <ScaleRunner
         username={username}
@@ -1239,7 +1974,7 @@ function ScaleHub({ username, user }) {
   return (
     <ScaleRunner
       username={username}
-      scaleId={activeZone.scaleIds[0]}
+      scaleId={scopedScaleIds[0]}
       onBack={() => setView("map")}
     />
   );

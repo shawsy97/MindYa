@@ -1,8 +1,8 @@
 // UserDetail.jsx
 import React from 'react';
-import { ArrowLeft, Users, Calendar, MessageCircle, Clock, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, MessageCircle, Clock, ChevronRight, FileText } from 'lucide-react';
 
-function UserDetail({ user, conversations, onBack, onSelectConversation }) {
+function UserDetail({ user, conversations, onBack, onSelectConversation, onOpenReport }) {
   const userConversations = conversations.filter(c => c.username === user.username);
   
   // 解析用户信息
@@ -148,6 +148,14 @@ function UserDetail({ user, conversations, onBack, onSelectConversation }) {
                 查看全部
               </div>
             </div>
+
+            <button
+              onClick={() => onOpenReport?.(user)}
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 text-white py-3 text-sm font-semibold"
+            >
+              <FileText size={16} />
+              心理报告
+            </button>
           </div>
         </div>
 
