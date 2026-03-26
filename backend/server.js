@@ -5,6 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require('bcryptjs');
 const puppeteer = require("puppeteer");
+const { S3Client, ListObjectsV2Command, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 require('dotenv').config(); // ← 加载 .env 文件
 
@@ -41,6 +43,25 @@ const conversationsPath = path.join(dataDir, "conversations.json");
 const reportsDir = path.join(dataDir, "reports");
 const reportsIndexPath = path.join(reportsDir, "index.json");
 const mediaDir = path.join(dataDir, "media");
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || "";
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || "";
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
+const R2_BUCKET = process.env.R2_BUCKET || "";
+const R2_MEDIA_PREFIX = process.env.R2_MEDIA_PREFIX || "media";
+const R2_ENABLED = Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET);
+
+const getR2Client = () => {
+  if (!R2_ENABLED) return null;
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY,
+    },
+    forcePathStyle: true,
+  });
+};
 
 const ensureDataFiles = () => {
   if (!fs.existsSync(dataDir)) {
@@ -131,6 +152,41 @@ const safeJoin = (base, ...parts) => {
   const target = path.normalize(path.join(base, ...parts));
   if (!target.startsWith(base)) return null;
   return target;
+};
+
+const streamToString = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+};
+
+const listR2Objects = async (prefix) => {
+  const client = getR2Client();
+  if (!client) return [];
+  let continuationToken = undefined;
+  const results = [];
+  do {
+    const resp = await client.send(
+      new ListObjectsV2Command({
+        Bucket: R2_BUCKET,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+    const contents = resp.Contents || [];
+    results.push(...contents);
+    continuationToken = resp.IsTruncated ? resp.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return results;
+};
+
+const getSignedR2Url = async (key, expiresIn = 600) => {
+  const client = getR2Client();
+  if (!client) return "";
+  const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
+  return getSignedUrl(client, command, { expiresIn });
 };
 
 const csvEscape = (value) => {
@@ -1505,6 +1561,43 @@ app.get("/api/media/list/*", async (req, res) => {
     }
 
     const subPath = req.params[0] || "";
+
+    if (R2_ENABLED) {
+      const prefixBase = `${R2_MEDIA_PREFIX}/${subPath}`.replace(/\/+$/, "");
+      const prefix = prefixBase ? `${prefixBase}/` : `${R2_MEDIA_PREFIX}/`;
+      const objects = await listR2Objects(prefix);
+      const files = [];
+
+      for (const obj of objects) {
+        const key = obj.Key || "";
+        if (!key || key.endsWith("/")) continue;
+        if (!/\.(mp3|m4a|wav|mp4|webm|m3u8)$/i.test(key)) continue;
+        if (/\.ts$/i.test(key)) continue;
+
+        const relative = key.slice(prefix.length);
+        if (!relative) continue;
+        let name = path.basename(key);
+        if (relative.includes("/") && key.toLowerCase().endsWith(".m3u8")) {
+          const parts = relative.split("/");
+          if (parts.length >= 2) name = parts[parts.length - 2];
+        }
+        files.push({ name, path: `r2/${key}` });
+      }
+
+      files.sort((a, b) => {
+        const aMatch = a.name.match(/第(\d+)集|ep(\d+)/i);
+        const bMatch = b.name.match(/第(\d+)集|ep(\d+)/i);
+        const aNum = aMatch ? Number(aMatch[1] || aMatch[2]) : NaN;
+        const bNum = bMatch ? Number(bMatch[1] || bMatch[2]) : NaN;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          return aNum - bNum;
+        }
+        return a.name.localeCompare(b.name, 'zh-CN');
+      });
+
+      return res.json({ files });
+    }
+
     const dirPath = safeJoin(mediaDir, subPath);
     if (!dirPath || !fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
       return res.status(404).json({ error: "Directory not found" });
@@ -1570,6 +1663,51 @@ app.get("/api/media/*", async (req, res) => {
     }
 
     const subPath = req.params[0] || "";
+    if (R2_ENABLED && subPath.startsWith("r2/")) {
+      const key = subPath.slice(3);
+      if (!key) {
+        return res.status(404).json({ error: "File not found" });
+      }
+      const filename = path.basename(key);
+      const ext = path.extname(filename).toLowerCase();
+      const mimeType = getMimeType(filename);
+
+      if (ext === ".m3u8") {
+        const client = getR2Client();
+        if (!client) return res.status(500).json({ error: "R2 unavailable" });
+        const resp = await client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+        const raw = await streamToString(resp.Body);
+        const baseDir = key.includes("/") ? key.slice(0, key.lastIndexOf("/") + 1) : "";
+        const lines = raw.split("\n");
+        const patched = [];
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) {
+            patched.push(line);
+            continue;
+          }
+          if (/^https?:\/\//i.test(trimmed)) {
+            patched.push(line);
+            continue;
+          }
+          const clean = trimmed.split("?")[0].replace(/^\.\//, "");
+          const segmentKey = `${baseDir}${clean}`;
+          const signedUrl = await getSignedR2Url(segmentKey, 600);
+          patched.push(signedUrl || line);
+        }
+        res.writeHead(200, { "Content-Type": mimeType });
+        res.end(patched.join("\n"));
+        return;
+      }
+
+      const signed = await getSignedR2Url(key, 600);
+      if (!signed) {
+        return res.status(404).json({ error: "File not found" });
+      }
+      res.redirect(signed);
+      return;
+    }
+
     const filePath = safeJoin(mediaDir, subPath);
     if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: "File not found" });
