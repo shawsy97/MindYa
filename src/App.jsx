@@ -1558,6 +1558,7 @@ function ScaleHub({ username, user }) {
   const [view, setView] = useState("map");
   const [activeZoneId, setActiveZoneId] = useState("emotion_forest");
   const [currentScaleIndex, setCurrentScaleIndex] = useState(0);
+  const [followupScaleIndex, setFollowupScaleIndex] = useState(0);
   const [themeResults, setThemeResults] = useState({});
   const ageText = String(user?.age ?? "");
   const numericAge = Number.parseInt(ageText.replace(/[^\d]/g, ""), 10);
@@ -1659,6 +1660,9 @@ function ScaleHub({ username, user }) {
       : activeZone.id === "confidence_garden" && (numericAge === 8 || numericAge === 9)
       ? ["BULLYING_SIMPLE"]
       : allowedScaleIds;
+  const followupScaleIds = ["SELF_HARM", "SUICIDE"].filter((id) =>
+    isScaleAllowed(getScale(id))
+  );
 
   const recordResult = (payload) => {
     if (!payload?.scaleId) return;
@@ -1700,36 +1704,45 @@ function ScaleHub({ username, user }) {
     return "extreme";
   };
 
+  const getEmotionSummary = () => {
+    const dass = themeResults.DASS21;
+    const anhedonia = themeResults.ANHEDONIA;
+    const erq = themeResults.ERQ;
+    const phq9 = themeResults.PHQ9_CHILD;
+    const dep = dass?.score?.depression ?? 0;
+    const anx = dass?.score?.anxiety ?? 0;
+    const stress = dass?.score?.stress ?? 0;
+    const maxTier = Math.max(
+      ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSLevel(dep)),
+      ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSAnxLevel(anx)),
+      ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSStressLevel(stress))
+    );
+    const anhedoniaTier = anhedonia?.level?.tier;
+    const phqLevel = phq9?.level?.severity || "";
+    const phqRisk = phq9?.score?.item9 > 0 || phq9?.score?.total >= 15 || ["中重度", "重度"].includes(phqLevel);
+    const needsFollowup = maxTier >= 2 || anhedoniaTier === "持续低落" || phqRisk;
+    let risk = "low";
+    let title = "今天的森林是多云转晴 🌤";
+    let desc = "整体状态比较平稳。\n偶尔的小波动是正常的。";
+    if (maxTier >= 2 || anhedoniaTier === "轻度波动") {
+      risk = "medium";
+      title = "森林里有些小雨 🌧";
+      desc = "最近可能有些压力或疲惫。\n给自己一点时间。";
+    }
+    if (maxTier >= 3 || anhedoniaTier === "持续低落" || phqRisk) {
+      risk = "high";
+      title = "森林最近有些持续阴天 🌫";
+      desc = "如果这种状态持续了一段时间，\n可以考虑和信任的人聊聊。";
+    }
+    if (erq?.level?.strategy === "更偏向表达抑制") {
+      desc = `${desc}\n你可能更习惯把情绪先收起来，慢慢消化。`;
+    }
+    return { risk, title, desc, needsFollowup };
+  };
+
   const renderSummary = () => {
     if (activeZone.id === "emotion_forest") {
-      const dass = themeResults.DASS21;
-      const anhedonia = themeResults.ANHEDONIA;
-      const erq = themeResults.ERQ;
-      const dep = dass?.score?.depression ?? 0;
-      const anx = dass?.score?.anxiety ?? 0;
-      const stress = dass?.score?.stress ?? 0;
-      const maxTier = Math.max(
-        ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSLevel(dep)),
-        ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSAnxLevel(anx)),
-        ["normal", "mild", "moderate", "severe", "extreme"].indexOf(getDASSStressLevel(stress))
-      );
-      const anhedoniaTier = anhedonia?.level?.tier;
-      let risk = "low";
-      let title = "今天的森林是多云转晴 🌤";
-      let desc = "整体状态比较平稳。\n偶尔的小波动是正常的。";
-      if (maxTier >= 2 || anhedoniaTier === "轻度波动") {
-        risk = "medium";
-        title = "森林里有些小雨 🌧";
-        desc = "最近可能有些压力或疲惫。\n给自己一点时间。";
-      }
-      if (maxTier >= 3 || anhedoniaTier === "持续低落") {
-        risk = "high";
-        title = "森林最近有些持续阴天 🌫";
-        desc = "如果这种状态持续了一段时间，\n可以考虑和信任的人聊聊。";
-      }
-      if (erq?.level?.strategy === "更偏向表达抑制") {
-        desc = `${desc}\n你可能更习惯把情绪先收起来，慢慢消化。`;
-      }
+      const { risk, title, desc } = getEmotionSummary();
       return (
         <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2">
           <div className={`inline-flex px-3 py-1 rounded-full text-xs ${colorByRisk(risk)}`}>
@@ -1737,11 +1750,6 @@ function ScaleHub({ username, user }) {
           </div>
           <div className="text-[#4B3425] font-semibold">{title}</div>
           <div className="text-sm text-[#6C5B50] whitespace-pre-line">{desc}</div>
-          {risk === "high" ? (
-            <button className="mt-2 text-sm text-[#4B3425] underline">
-              查看更多支持方式
-            </button>
-          ) : null}
         </div>
       );
     }
@@ -1945,6 +1953,8 @@ function ScaleHub({ username, user }) {
   }
 
   if (view === "summary") {
+    const { needsFollowup } = activeZone.id === "emotion_forest" ? getEmotionSummary() : { needsFollowup: false };
+    const followupCompleted = followupScaleIds.length > 0 && followupScaleIds.every((id) => themeResults[id]);
     return (
       <div
         className="rounded-[28px] p-5 min-h-[560px] flex flex-col gap-4"
@@ -1961,6 +1971,23 @@ function ScaleHub({ username, user }) {
           <div className="text-sm font-semibold">{activeZone.theme.title} · 总结</div>
         </div>
         {renderSummary()}
+        {activeZone.id === "emotion_forest" && needsFollowup && !followupCompleted && followupScaleIds.length > 0 ? (
+          <div className="rounded-2xl bg-white/90 p-4 shadow-sm space-y-2 text-[#6C5B50]">
+            <div className="text-sm font-semibold text-[#4B3425]">情绪有点重时，建议继续完成自杀/自伤量表</div>
+            <div className="text-xs leading-relaxed">
+              如果你觉得自己情绪真的很差，可以继续完成接下来的量表，帮助我们更准确地理解你的状态。
+            </div>
+            <button
+              onClick={() => {
+                setFollowupScaleIndex(0);
+                setView("followup");
+              }}
+              className="mt-2 w-full rounded-full bg-[#4B3425] text-white py-2.5 text-sm font-semibold"
+            >
+              继续完成自杀/自伤量表 →
+            </button>
+          </div>
+        ) : null}
         <button
           onClick={() => setView("map")}
           className="mt-auto w-full rounded-full bg-[#4B3425] text-white py-3 font-semibold"
@@ -1968,6 +1995,44 @@ function ScaleHub({ username, user }) {
           返回成长地图 →
         </button>
       </div>
+    );
+  }
+
+  if (view === "followup") {
+    const scaleId = followupScaleIds[followupScaleIndex];
+    if (!scaleId) {
+      return (
+        <div className="rounded-[28px] p-5 min-h-[560px] flex flex-col gap-4 bg-[#F7EEC9]">
+          <div className="text-[#5A4332] font-semibold">当前年龄暂不适用</div>
+          <button
+            onClick={() => setView("map")}
+            className="mt-auto w-full rounded-full bg-[#4B3425] text-white py-3 font-semibold"
+          >
+            返回成长地图 →
+          </button>
+        </div>
+      );
+    }
+    const isLast = followupScaleIndex >= followupScaleIds.length - 1;
+    return (
+      <ScaleRunner
+        username={username}
+        scaleId={scaleId}
+        onBack={() => setView("summary")}
+        backLabel="← 返回总结"
+        onComplete={(payload) => {
+          recordResult(payload);
+          if (!isLast) {
+            setFollowupScaleIndex((idx) => idx + 1);
+          } else {
+            setView("summary");
+          }
+        }}
+        completeLabel={isLast ? "完成并返回总结 →" : "继续下一份 →"}
+        autoAdvance
+        themeBg={activeZone.theme.bgColor}
+        themeTextColor={activeZone.theme.textColor}
+      />
     );
   }
 

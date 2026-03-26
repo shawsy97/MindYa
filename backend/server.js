@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require('bcryptjs');
 const puppeteer = require("puppeteer");
+const crypto = require("crypto");
 const { S3Client, ListObjectsV2Command, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
@@ -49,6 +50,11 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
 const R2_BUCKET = process.env.R2_BUCKET || "";
 const R2_MEDIA_PREFIX = process.env.R2_MEDIA_PREFIX || "media";
 const R2_ENABLED = Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET);
+const D1_ACCOUNT_ID = process.env.D1_ACCOUNT_ID || "";
+const D1_DATABASE_ID = process.env.D1_DATABASE_ID || "";
+const D1_API_TOKEN = process.env.D1_API_TOKEN || "";
+const D1_ENABLED = Boolean(D1_ACCOUNT_ID && D1_DATABASE_ID && D1_API_TOKEN);
+const D1_API_BASE = `https://api.cloudflare.com/client/v4/accounts/${D1_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}`;
 
 const getR2Client = () => {
   if (!R2_ENABLED) return null;
@@ -61,6 +67,81 @@ const getR2Client = () => {
     },
     forcePathStyle: true,
   });
+};
+
+const d1Query = async (sql, params = []) => {
+  if (!D1_ENABLED) throw new Error("D1 not configured");
+  const resp = await fetch(`${D1_API_BASE}/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${D1_API_TOKEN}`,
+    },
+    body: JSON.stringify({ sql, params }),
+  });
+  const data = await resp.json();
+  if (!data?.success) {
+    const detail = data?.errors?.[0]?.message || "D1 error";
+    throw new Error(detail);
+  }
+  return data?.result?.[0] || {};
+};
+
+const d1Exec = async (sql, params = []) => {
+  await d1Query(sql, params);
+};
+
+const initD1Tables = async () => {
+  if (!D1_ENABLED) return;
+  await d1Exec(`CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE,
+    email TEXT,
+    password_hash TEXT,
+    status TEXT,
+    created_at TEXT,
+    updated_at TEXT
+  )`);
+  await d1Exec(`CREATE TABLE IF NOT EXISTS profiles (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    username TEXT,
+    nickname TEXT,
+    avatar_url TEXT,
+    bio TEXT,
+    gender TEXT,
+    birthday TEXT,
+    age TEXT,
+    grade TEXT,
+    scale_result TEXT,
+    model_result TEXT,
+    game_result TEXT,
+    created_at TEXT,
+    updated_at TEXT
+  )`);
+  await d1Exec(`CREATE TABLE IF NOT EXISTS results (
+    id TEXT PRIMARY KEY,
+    username TEXT,
+    type TEXT,
+    data TEXT,
+    created_at TEXT
+  )`);
+  await d1Exec(`CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    username TEXT,
+    title TEXT,
+    preview TEXT,
+    created_at TEXT,
+    updated_at TEXT
+  )`);
+  await d1Exec(`CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT,
+    role TEXT,
+    content TEXT,
+    created_at TEXT
+  )`);
 };
 
 const ensureDataFiles = () => {
@@ -121,6 +202,47 @@ const readUsers = () => {
 
 const writeUsers = (users) => {
   fs.writeFileSync(usersPath, JSON.stringify(users, null, 2), "utf-8");
+};
+
+const getUserByUsername = async (username) => {
+  if (!username) return null;
+  if (D1_ENABLED) {
+    const result = await d1Query("SELECT * FROM users WHERE username = ? LIMIT 1", [username]);
+    return result?.results?.[0] || null;
+  }
+  const users = readUsers();
+  return users.find((u) => u.username === username) || null;
+};
+
+const userExists = async (username) => {
+  const user = await getUserByUsername(username);
+  return Boolean(user);
+};
+
+const createUser = async ({ username, password }) => {
+  const now = new Date().toISOString();
+  if (D1_ENABLED) {
+    const userId = crypto.randomUUID();
+    await d1Exec(
+      "INSERT INTO users (id, username, email, password_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [userId, username, "", password, "active", now, now]
+    );
+    const profileId = crypto.randomUUID();
+    await d1Exec(
+      "INSERT INTO profiles (id, user_id, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      [profileId, userId, username, now, now]
+    );
+    return { id: userId, username };
+  }
+  const users = readUsers();
+  users.push({
+    username,
+    password,
+    role: "student",
+    createdAt: now,
+  });
+  writeUsers(users);
+  return { username };
 };
 
 const readReportsIndex = () => {
@@ -270,14 +392,30 @@ const safeParseJson = (raw) => {
   }
 };
 
-const getProfileByUsername = (username) => {
+const getProfileByUsername = async (username) => {
+  if (!username) return null;
+  if (D1_ENABLED) {
+    const result = await d1Query("SELECT * FROM profiles WHERE username = ? LIMIT 1", [username]);
+    return result?.results?.[0] || null;
+  }
   ensureDataFiles();
   const content = fs.readFileSync(profilesPath, "utf-8");
   const profiles = parseCsv(content);
   return profiles.rows.find((row) => row.username === username) || null;
 };
 
-const getScaleResultsByUsername = (username) => {
+const getScaleResultsByUsername = async (username) => {
+  if (D1_ENABLED) {
+    const result = await d1Query(
+      "SELECT username, type, data, created_at FROM results WHERE username = ? AND type = 'scale' ORDER BY created_at ASC",
+      [username]
+    );
+    return (result?.results || []).map((row) => ({
+      username: row.username,
+      createdAt: row.created_at,
+      data: safeParseJson(row.data),
+    })).filter((r) => r.data);
+  }
   ensureDataFiles();
   const rawData = fs.readFileSync(resultsPath, "utf-8");
   const lines = rawData.split("\n").filter((l) => l.trim() !== "");
@@ -298,7 +436,18 @@ const getScaleResultsByUsername = (username) => {
   return results;
 };
 
-const getTaskResultsByUsername = (username) => {
+const getTaskResultsByUsername = async (username) => {
+  if (D1_ENABLED) {
+    const result = await d1Query(
+      "SELECT username, type, data, created_at FROM results WHERE username = ? AND type = 'task' ORDER BY created_at ASC",
+      [username]
+    );
+    return (result?.results || []).map((row) => ({
+      username: row.username,
+      createdAt: row.created_at,
+      data: safeParseJson(row.data),
+    })).filter((r) => r.data);
+  }
   ensureDataFiles();
   const rawData = fs.readFileSync(resultsPath, "utf-8");
   const lines = rawData.split("\n").filter((l) => l.trim() !== "");
@@ -319,7 +468,26 @@ const getTaskResultsByUsername = (username) => {
   return results;
 };
 
-const upsertProfile = ({ username, gender, age, grade }) => {
+const upsertProfile = async ({ username, gender, age, grade }) => {
+  const now = new Date().toISOString();
+  if (D1_ENABLED) {
+    const existing = await d1Query("SELECT id FROM profiles WHERE username = ? LIMIT 1", [username]);
+    const row = existing?.results?.[0];
+    if (row?.id) {
+      await d1Exec(
+        "UPDATE profiles SET gender = ?, age = ?, grade = ?, updated_at = ? WHERE id = ?",
+        [gender ?? "", age ?? "", grade ?? "", now, row.id]
+      );
+    } else {
+      const profileId = crypto.randomUUID();
+      await d1Exec(
+        "INSERT INTO profiles (id, user_id, username, gender, age, grade, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [profileId, null, username, gender ?? "", age ?? "", grade ?? "", now, now]
+      );
+    }
+    return;
+  }
+
   ensureDataFiles();
   const { rows } = parseCsv(fs.readFileSync(profilesPath, "utf-8"));
   const header = [
@@ -333,7 +501,6 @@ const upsertProfile = ({ username, gender, age, grade }) => {
     "createdAt",
     "updatedAt",
   ];
-  const now = new Date().toISOString();
   let found = rows.find((row) => row.username === username);
   if (!found) {
     found = {
@@ -356,7 +523,29 @@ const upsertProfile = ({ username, gender, age, grade }) => {
   writeCsv(header, rows, profilesPath);
 };
 
-const updateResults = ({ username, type, data }) => {
+const updateResults = async ({ username, type, data }) => {
+  const now = new Date().toISOString();
+  const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
+  if (D1_ENABLED) {
+    const existing = await d1Query("SELECT id FROM profiles WHERE username = ? LIMIT 1", [username]);
+    const row = existing?.results?.[0];
+    const column =
+      type === "scale" ? "scale_result" : type === "model" ? "model_result" : "game_result";
+    if (row?.id) {
+      await d1Exec(
+        `UPDATE profiles SET ${column} = ?, updated_at = ? WHERE id = ?`,
+        [payload, now, row.id]
+      );
+    } else {
+      const profileId = crypto.randomUUID();
+      await d1Exec(
+        `INSERT INTO profiles (id, user_id, username, ${column}, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [profileId, null, username, payload, now, now]
+      );
+    }
+    return;
+  }
+
   ensureDataFiles();
   const { rows } = parseCsv(fs.readFileSync(profilesPath, "utf-8"));
   const header = [
@@ -370,7 +559,6 @@ const updateResults = ({ username, type, data }) => {
     "createdAt",
     "updatedAt",
   ];
-  const now = new Date().toISOString();
   let found = rows.find((row) => row.username === username);
   if (!found) {
     found = {
@@ -386,7 +574,6 @@ const updateResults = ({ username, type, data }) => {
     };
     rows.push(found);
   }
-  const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
   if (type === "scale") found.scaleResult = payload;
   if (type === "model") found.modelResult = payload;
   if (type === "game" || type === "task") found.gameResult = payload;
@@ -394,14 +581,24 @@ const updateResults = ({ username, type, data }) => {
   writeCsv(header, rows, profilesPath);
 };
 
-const appendResult = ({ username, type, data }) => {
-  ensureDataFiles();
+const appendResult = async ({ username, type, data }) => {
   const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
+  const createdAt = new Date().toISOString();
+  if (D1_ENABLED) {
+    const id = crypto.randomUUID();
+    await d1Exec(
+      "INSERT INTO results (id, username, type, data, created_at) VALUES (?, ?, ?, ?, ?)",
+      [id, username, type, payload, createdAt]
+    );
+    return;
+  }
+
+  ensureDataFiles();
   const row = [
     csvEscape(username),
     csvEscape(type),
     csvEscape(payload),
-    csvEscape(new Date().toISOString()),
+    csvEscape(createdAt),
   ].join(",");
   fs.appendFileSync(resultsPath, `${row}\n`, "utf-8");
 };
@@ -448,19 +645,12 @@ app.post("/api/register", async (req, res) => {
       return res.status(400).json({ error: "Missing username or password" });
     }
 
-    // 始终使用文件存储模式
-    const users = readUsers();
-    if (users.some((u) => u.username === username)) {
+    const exists = await userExists(username);
+    if (exists) {
       return res.status(409).json({ error: "User already exists" });
     }
 
-    users.push({
-      username,
-      password, // 在实际部署中应加密密码
-      role: 'student',
-      createdAt: new Date().toISOString()
-    });
-    writeUsers(users);
+    await createUser({ username, password });
     appendLog({ username, action: "register", detail: { username } });
 
     return res.json({ ok: true });
@@ -478,10 +668,8 @@ app.post("/api/login", async (req, res) => {
       return res.status(400).json({ error: "Missing username or password" });
     }
 
-    // 始终使用文件存储模式
-    const users = readUsers();
-    const found = users.find((u) => u.username === username && u.password === password);
-    if (!found) {
+    const found = await getUserByUsername(username);
+    if (!found || (found.password_hash !== password && found.password !== password)) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
     appendLog({ username, action: "login", detail: { username } });
@@ -521,11 +709,36 @@ app.post("/api/admin/login", async (req, res) => {
 // 管理员获取对话记录API
 app.get("/api/admin/conversations", async (req, res) => {
   try {
-    // 始终使用文件存储模式 - 从conversations.json读取数据
+    if (D1_ENABLED) {
+      const result = await d1Query(
+        "SELECT * FROM conversations ORDER BY updated_at DESC",
+        []
+      );
+      const conversations = result?.results || [];
+      const payload = [];
+      for (const conv of conversations) {
+        const msgResult = await d1Query(
+          "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
+          [conv.id]
+        );
+        const msgs = (msgResult?.results || []).map((m) => ({
+          id: m.id,
+          text: m.content,
+          sender: m.role === "assistant" ? "ai" : "user",
+        }));
+        payload.push({
+          id: conv.id,
+          messages: msgs,
+          preview: conv.preview || "",
+          updatedAt: conv.updated_at,
+          username: conv.username || "",
+        });
+      }
+      return res.json(payload);
+    }
+
     const allConversations = readConversations();
     const result = [];
-
-    // 将对象格式转换为数组格式
     for (const [username, userConversations] of Object.entries(allConversations)) {
       for (const conversation of userConversations) {
         result.push({
@@ -546,18 +759,39 @@ app.get("/api/admin/conversations", async (req, res) => {
 // 在 server.js 中找到 /api/admin/users API，修改如下：
 app.get("/api/admin/users", async (req, res) => {
   try {
-    // 读取 users.json
+    if (D1_ENABLED) {
+      const usersResult = await d1Query("SELECT * FROM users", []);
+      const profilesResult = await d1Query("SELECT * FROM profiles", []);
+      const profileMap = {};
+      for (const row of profilesResult?.results || []) {
+        if (row.username) {
+          profileMap[row.username] = {
+            gender: row.gender || '',
+            age: row.age || '',
+            grade: row.grade || '',
+            scaleResult: row.scale_result || '',
+            modelResult: row.model_result || '',
+            gameResult: row.game_result || '',
+            createdAt: row.created_at || '',
+            updatedAt: row.updated_at || ''
+          };
+        }
+      }
+      const usersWithProfiles = (usersResult?.results || []).map((user) => ({
+        _id: user.id || user.username,
+        username: user.username,
+        password: user.password_hash,
+        role: user.role || 'student',
+        createdAt: user.created_at || new Date().toISOString(),
+        lastLoginAt: user.last_login_at || null,
+        profile: profileMap[user.username] || null
+      }));
+      return res.json(usersWithProfiles);
+    }
+
     const users = readUsers();
-
-    console.log('原始用户数据:', users); // 添加日志
-
-    // 读取 profiles.csv
     const profilesContent = fs.readFileSync(profilesPath, 'utf-8');
     const profiles = parseCsv(profilesContent);
-
-    console.log('Profile 数据行数:', profiles.rows.length); // 添加日志
-
-    // 创建 profile 映射
     const profileMap = {};
     for (const row of profiles.rows) {
       if (row.username) {
@@ -574,11 +808,8 @@ app.get("/api/admin/users", async (req, res) => {
       }
     }
 
-    // 合并用户数据和 profile 数据，为每个用户添加默认角色
     const usersWithProfiles = users.map(user => {
-      // 如果没有 role，默认为 'student'
       const userRole = user.role || 'student';
-
       return {
         _id: user._id || user.username,
         username: user.username,
@@ -590,8 +821,6 @@ app.get("/api/admin/users", async (req, res) => {
       };
     });
 
-    console.log('处理后用户数:', usersWithProfiles.length); // 添加日志
-
     return res.json(usersWithProfiles);
   } catch (error) {
     console.error('Get users error:', error);
@@ -602,7 +831,52 @@ app.get("/api/admin/users", async (req, res) => {
 // 管理员获取量表结果统计 - 修改版
 app.get("/api/admin/scales", async (req, res) => {
   try {
-    // 始终使用文件存储模式 - 从results.csv中读取量表数据
+    if (D1_ENABLED) {
+      const result = await d1Query(
+        "SELECT id, username, data, created_at FROM results WHERE type = 'scale' ORDER BY created_at DESC",
+        []
+      );
+      const rows = result?.results || [];
+      const scales = rows.map((row) => {
+        const parsedData = safeParseJson(row.data) || {};
+        const scale = {
+          _id: row.id,
+          username: row.username,
+          submittedAt: row.created_at,
+        };
+        if (parsedData.scaleId) {
+          scale.scaleId = parsedData.scaleId;
+          scale.scaleName = getScaleName(parsedData.scaleId);
+        } else if (parsedData.scaleName) {
+          scale.scaleId = parsedData.scaleName;
+          scale.scaleName = parsedData.scaleName;
+        } else {
+          scale.scaleId = "Unknown";
+          scale.scaleName = "未知量表";
+        }
+        if (parsedData.score && parsedData.score.total) {
+          scale.totalScore = parsedData.score.total;
+        } else if (parsedData.totalScore) {
+          scale.totalScore = parsedData.totalScore;
+        } else {
+          scale.totalScore = 0;
+        }
+        if (parsedData.flags && parsedData.flags.riskLevel) {
+          scale.riskLevel = parsedData.flags.riskLevel;
+        } else if (parsedData.riskLevel) {
+          scale.riskLevel = parsedData.riskLevel;
+        } else {
+          scale.riskLevel = "low";
+        }
+        scale.fullData = parsedData;
+        if (parsedData.answers) scale.answers = parsedData.answers;
+        if (parsedData.score) scale.scoreDetails = parsedData.score;
+        if (parsedData.level) scale.level = parsedData.level;
+        return scale;
+      });
+      return res.json(scales);
+    }
+
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
     const scales = [];
@@ -694,16 +968,55 @@ app.get("/api/admin/scales", async (req, res) => {
 // 获取单个量表的详细信息
 app.get("/api/admin/scale/:id", async (req, res) => {
   try {
-    const scaleId = parseInt(req.params.id);
+    const scaleId = req.params.id;
+
+    if (D1_ENABLED) {
+      const result = await d1Query(
+        "SELECT id, username, data, created_at FROM results WHERE id = ? AND type = 'scale' LIMIT 1",
+        [scaleId]
+      );
+      const row = result?.results?.[0];
+      if (!row) return res.status(404).json({ error: '量表记录不存在' });
+      const parsedData = safeParseJson(row.data) || {};
+      const scale = {
+        _id: row.id,
+        username: row.username,
+        submittedAt: row.created_at,
+        fullData: parsedData,
+      };
+      if (parsedData.scaleId) {
+        scale.scaleId = parsedData.scaleId;
+        scale.scaleName = getScaleName(parsedData.scaleId);
+      } else if (parsedData.scaleName) {
+        scale.scaleId = parsedData.scaleName;
+        scale.scaleName = parsedData.scaleName;
+      }
+      if (parsedData.score && parsedData.score.total) {
+        scale.totalScore = parsedData.score.total;
+      } else if (parsedData.totalScore) {
+        scale.totalScore = parsedData.totalScore;
+      }
+      if (parsedData.flags && parsedData.flags.riskLevel) {
+        scale.riskLevel = parsedData.flags.riskLevel;
+      } else if (parsedData.riskLevel) {
+        scale.riskLevel = parsedData.riskLevel;
+      }
+      if (parsedData.answers) scale.answers = parsedData.answers;
+      if (parsedData.score) scale.scoreDetails = parsedData.score;
+      if (parsedData.level) scale.level = parsedData.level;
+      return res.json(scale);
+    }
+
+    const numericId = parseInt(scaleId);
 
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
 
-    if (scaleId <= 0 || scaleId >= lines.length) {
+    if (numericId <= 0 || numericId >= lines.length) {
       return res.status(404).json({ error: '量表记录不存在' });
     }
 
-    const values = parseCsvLine(lines[scaleId]);
+    const values = parseCsvLine(lines[numericId]);
 
     if (values.length < 4 || values[1] !== 'scale') {
       return res.status(404).json({ error: '不是有效的量表记录' });
@@ -720,7 +1033,7 @@ app.get("/api/admin/scale/:id", async (req, res) => {
       const parsedData = JSON.parse(dataStr);
 
       const scale = {
-        _id: scaleId,
+        _id: numericId,
         username: values[0],
         submittedAt: values[3],
         fullData: parsedData
@@ -787,7 +1100,9 @@ function getScaleName(scaleId) {
     'ERQ': '情绪调节问卷',
     'NET_ADDICT': '青少年上网成瘾自评量表',
     'BULLYING_SIMPLE': '同伴相处小问答',
-    'PHQ9_CHILD': 'PHQ-9 抑郁量表'
+    'PHQ9_CHILD': 'PHQ-9 抑郁量表',
+    'SELF_HARM': '自伤问卷（非自杀性自伤筛查）',
+    'SUICIDE': '自杀问卷（风险筛查）'
   };
 
   return scaleNames[scaleId] || scaleId;
@@ -1038,10 +1353,10 @@ const callStatusAI = async (input) => {
 };
 
 const buildReportData = async (username) => {
-  const profile = getProfileByUsername(username) || {};
+  const profile = (await getProfileByUsername(username)) || {};
   const ageNumber = Number(String(profile.age || "").replace(/[^\d]/g, ""));
   const themeMap = getThemeScaleMap(ageNumber);
-  const scaleResults = getScaleResultsByUsername(username);
+  const scaleResults = await getScaleResultsByUsername(username);
   const latestScales = getLatestScalesById(scaleResults);
 
   const scalesPayload = {};
@@ -1141,9 +1456,9 @@ const getTaskValueForTrend = (taskData) => {
 };
 
 const buildAiContextData = async (username, userText = "") => {
-  const profile = getProfileByUsername(username) || {};
-  const scaleResults = getScaleResultsByUsername(username);
-  const taskResults = getTaskResultsByUsername(username);
+  const profile = (await getProfileByUsername(username)) || {};
+  const scaleResults = await getScaleResultsByUsername(username);
+  const taskResults = await getTaskResultsByUsername(username);
   const latestScales = getLatestScalesById(scaleResults);
   const latestTasks = getLatestTasksById(taskResults);
 
@@ -1242,9 +1557,20 @@ const renderReportHtml = (report) => {
     ["睡眠星球", "睡眠与恢复", themeSummaries.sleep_planet || ""],
   ];
 
-  const renderScale = (scaleId) => {
+  const renderScale = (scaleId, options = {}) => {
     const scale = report.scales?.[scaleId];
-    if (!scale) return "";
+    if (!scale) {
+      if (!options.showWhenMissing) return "";
+      return `
+        <div class="section">
+          <div class="section-title">${options.title || scaleId}</div>
+          <div class="section-body">
+            <div>未测评</div>
+            <div class="text-block">说明：${options.missingNote || "未进行该量表测评。"}</div>
+          </div>
+        </div>
+      `;
+    }
     const score = scale.score || {};
     const level = scale.level || {};
     const interp = scaleInterpretations[scaleId] || "";
@@ -1269,6 +1595,20 @@ const renderReportHtml = (report) => {
         extraLines.push(`表达抑制分（反向）：${score.suppression_reverse_mean}`);
       }
     }
+    if (scaleId === "SELF_HARM") {
+      extraLines.push(`自伤想法频次：${score.ideation ?? "-"}`);
+      extraLines.push(`自伤行为频次：${score.behavior ?? "-"}`);
+      extraLines.push(`判定：任一题 ≥ 1 视为风险信号`);
+      extraLines.push(`说明：${level.summary || "-"}`);
+    }
+    if (scaleId === "SUICIDE") {
+      extraLines.push(`自杀想法：${score.ideation ?? "-"}`);
+      extraLines.push(`自杀计划：${score.plan ?? "-"}`);
+      extraLines.push(`自杀企图/尝试：${score.attempt ?? "-"}`);
+      extraLines.push(`企图次数：${score.attemptCount ?? "-"}`);
+      extraLines.push(`判定：任一题=有 视为风险信号`);
+      extraLines.push(`说明：${level.summary || "-"}`);
+    }
     if (scaleId === "NET_ADDICT") {
       extraLines.push(`总分：${score.total ?? "-"}`);
       extraLines.push(`症状维度：${score.symptom ?? "-"}`);
@@ -1290,12 +1630,18 @@ const renderReportHtml = (report) => {
       extraLines.push(`总分：${score.total ?? "-"}`);
       extraLines.push(`分级：${level.total || "-"}`);
     }
+    const totalLine = score.total !== undefined ? `<div>总分：${score.total ?? "-"}</div>` : "";
+    const levelLine =
+      level.severity ||
+      level.status ||
+      level.total ||
+      ((scaleId === "SELF_HARM" || scaleId === "SUICIDE") ? level.summary : "-");
     return `
       <div class="section">
         <div class="section-title">${scale.scaleName || scaleId}</div>
         <div class="section-body">
-          <div>总分：${score.total ?? "-"}</div>
-          <div>分级：${level.severity || level.status || level.total || "-"}</div>
+          ${totalLine}
+          <div>分级：${levelLine || "-"}</div>
           ${extraLines.map((l) => `<div>${l}</div>`).join("")}
           <div class="text-block">解释：${interp || "-"}</div>
         </div>
@@ -1321,7 +1667,7 @@ const renderReportHtml = (report) => {
   </head>
   <body>
     <div class="cover">
-      <h1>成长探索心理测评专业报告</h1>
+      <h1>成长探索测量结果</h1>
       <div class="muted">受测者编号：${report.username}</div>
       <div class="muted">姓名/昵称：${report.username}</div>
       <div class="muted">年龄：${profile.age || "-"}</div>
@@ -1350,6 +1696,16 @@ const renderReportHtml = (report) => {
       <h2>分主题结果详情</h2>
       ${renderScale("DASS21")}
       ${renderScale("PHQ9_CHILD")}
+      ${renderScale("SELF_HARM", {
+        showWhenMissing: true,
+        title: "自伤问卷（非自杀性自伤筛查）",
+        missingNote: "情绪可控，未进入自伤量表测评。",
+      })}
+      ${renderScale("SUICIDE", {
+        showWhenMissing: true,
+        title: "自杀问卷（风险筛查）",
+        missingNote: "情绪可控，未进入自杀量表测评。",
+      })}
       ${renderScale("ANHEDONIA")}
       ${renderScale("ERQ")}
       ${renderScale("NET_ADDICT")}
@@ -1397,6 +1753,22 @@ const generateReportPdf = async (report, pdfPath) => {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
     await page.pdf({ path: pdfPath, format: "A4", printBackground: true });
+  } finally {
+    await browser.close();
+  }
+};
+
+const generateReportPdfBuffer = async (report) => {
+  const html = renderReportHtml(report);
+  const browser = await puppeteer.launch({
+    headless: "new",
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    return await page.pdf({ format: "A4", printBackground: true });
   } finally {
     await browser.close();
   }
@@ -1487,13 +1859,16 @@ app.get("/api/admin/report/:id/pdf", async (req, res) => {
     const record = index.find((r) => r.id === id);
     if (!record) return res.status(404).json({ error: "Report not found" });
 
-    if (!fs.existsSync(record.pdfPath)) {
-      const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
-      await generateReportPdf(report, record.pdfPath);
-    }
-
+    const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
+    const pdfBuffer = await generateReportPdfBuffer(report);
+    const pdfBytes = Buffer.from(pdfBuffer);
     res.setHeader("Content-Type", "application/pdf");
-    return res.sendFile(record.pdfPath);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${record.id}.pdf"`
+    );
+    res.setHeader("Cache-Control", "no-store");
+    return res.send(pdfBytes);
   } catch (error) {
     console.error("Generate report pdf error:", error);
     return res.status(500).json({ error: "Internal server error" });
@@ -1510,8 +1885,7 @@ app.post("/api/profile", async (req, res) => {
       return res.status(400).json({ error: "Missing username" });
     }
 
-    // 始终使用文件存储模式
-    upsertProfile({ username, gender, age, grade });
+    await upsertProfile({ username, gender, age, grade });
     appendLog({ username, action: 'profile', detail: { gender, age, grade } });
     return res.json({ ok: true });
   } catch (error) {
@@ -1527,9 +1901,7 @@ app.get("/api/profile/:username", async (req, res) => {
       return res.status(400).json({ error: "Missing username" });
     }
 
-    const profilesContent = fs.readFileSync(profilesPath, 'utf-8');
-    const profiles = parseCsv(profilesContent);
-    const found = profiles.rows.find((row) => row.username === username);
+    const found = await getProfileByUsername(username);
 
     if (!found) {
       return res.status(404).json({ error: "Profile not found" });
@@ -1554,8 +1926,7 @@ app.get("/api/media/list/*", async (req, res) => {
     if (!username) {
       return res.status(401).json({ error: "Missing username" });
     }
-    const users = readUsers();
-    const exists = users.some((u) => u.username === username);
+    const exists = await userExists(username);
     if (!exists) {
       return res.status(403).json({ error: "Invalid user" });
     }
@@ -1656,8 +2027,7 @@ app.get("/api/media/*", async (req, res) => {
     if (!username) {
       return res.status(401).json({ error: "Missing username" });
     }
-    const users = readUsers();
-    const exists = users.some((u) => u.username === username);
+    const exists = await userExists(username);
     if (!exists) {
       return res.status(403).json({ error: "Invalid user" });
     }
@@ -1768,9 +2138,8 @@ app.post("/api/results", async (req, res) => {
       return res.status(400).json({ error: "Missing username or type" });
     }
 
-    // 始终使用文件存储模式
-    updateResults({ username, type, data });
-    appendResult({ username, type, data });
+    await updateResults({ username, type, data });
+    await appendResult({ username, type, data });
     appendLog({ username, action: `result:${type}`, detail: data });
     return res.json({ ok: true });
   } catch (error) {
@@ -1962,7 +2331,36 @@ app.get("/api/history/:username", async (req, res) => {
   try {
     const { username } = req.params;
 
-    // 始终使用文件存储模式
+    if (D1_ENABLED) {
+      const user = await getUserByUsername(username);
+      const userId = user?.id || null;
+      const convResult = await d1Query(
+        "SELECT * FROM conversations WHERE username = ? ORDER BY updated_at DESC",
+        [username]
+      );
+      const conversations = convResult?.results || [];
+      const payload = [];
+      for (const conv of conversations) {
+        const msgResult = await d1Query(
+          "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
+          [conv.id]
+        );
+        const msgs = (msgResult?.results || []).map((m) => ({
+          id: m.id,
+          text: m.content,
+          sender: m.role === "assistant" ? "ai" : "user",
+        }));
+        payload.push({
+          id: conv.id,
+          messages: msgs,
+          preview: conv.preview || "",
+          updatedAt: conv.updated_at,
+          user_id: conv.user_id || userId,
+        });
+      }
+      return res.json(payload);
+    }
+
     const allHistory = readConversations();
     const userHistory = allHistory[username] || [];
     res.json(userHistory);
@@ -1977,7 +2375,38 @@ app.post("/api/history/save", async (req, res) => {
   try {
     const { username, conversationId, messages, preview } = req.body;
 
-    // 始终使用文件存储模式
+    if (D1_ENABLED) {
+      const now = new Date().toISOString();
+      const user = await getUserByUsername(username);
+      const userId = user?.id || null;
+      const existing = await d1Query(
+        "SELECT id FROM conversations WHERE id = ? LIMIT 1",
+        [conversationId]
+      );
+      if (existing?.results?.length) {
+        await d1Exec(
+          "UPDATE conversations SET preview = ?, updated_at = ? WHERE id = ?",
+          [preview || "", now, conversationId]
+        );
+      } else {
+        await d1Exec(
+          "INSERT INTO conversations (id, user_id, username, title, preview, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [conversationId, userId, username, preview || "", preview || "", now, now]
+        );
+      }
+
+      await d1Exec("DELETE FROM messages WHERE conversation_id = ?", [conversationId]);
+      for (const m of messages || []) {
+        const msgId = m.id ? String(m.id) : crypto.randomUUID();
+        const role = m.sender === "ai" ? "assistant" : "user";
+        await d1Exec(
+          "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+          [msgId, conversationId, role, m.text || "", now]
+        );
+      }
+      return res.json({ ok: true });
+    }
+
     const allHistory = readConversations();
     if (!allHistory[username]) allHistory[username] = [];
 
@@ -1987,7 +2416,7 @@ app.post("/api/history/save", async (req, res) => {
     if (index > -1) {
       allHistory[username][index] = record;
     } else {
-      allHistory[username].unshift(record); // 新对话放在最前面
+      allHistory[username].unshift(record);
     }
 
     writeConversations(allHistory);
@@ -2005,6 +2434,9 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log("系统以文件存储模式运行，数据将存储在本地文件中");
   }
 });
+initD1Tables().catch((err) => {
+  console.error("Init D1 tables failed:", err);
+});
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
 
@@ -2013,14 +2445,30 @@ app.get("/api/ping", (req, res) => res.json({ ok: true }));
 // 管理员获取概览统计数据API
 app.get("/api/admin/overview/stats", async (req, res) => {
   try {
-    // 读取用户数据
-    const users = readUsers();
-    const userProfiles = fs.existsSync(profilesPath) ?
-      parseCsv(fs.readFileSync(profilesPath, 'utf-8')).rows : [];
+    let users = [];
+    let userProfiles = [];
+    let scaleResults = [];
 
-    // 读取量表结果数据
-    const scaleResults = fs.existsSync(resultsPath) ?
-      parseCsv(fs.readFileSync(resultsPath, 'utf-8')).rows : [];
+    if (D1_ENABLED) {
+      const usersResult = await d1Query("SELECT id, username FROM users", []);
+      const profilesResult = await d1Query("SELECT id, username FROM profiles", []);
+      const resultsResult = await d1Query("SELECT id, type, created_at, data FROM results", []);
+      users = usersResult?.results || [];
+      userProfiles = profilesResult?.results || [];
+      scaleResults = (resultsResult?.results || []).map((row) => ({
+        type: row.type,
+        createdAt: row.created_at,
+        data: row.data,
+      }));
+    } else {
+      users = readUsers();
+      userProfiles = fs.existsSync(profilesPath)
+        ? parseCsv(fs.readFileSync(profilesPath, 'utf-8')).rows
+        : [];
+      scaleResults = fs.existsSync(resultsPath)
+        ? parseCsv(fs.readFileSync(resultsPath, 'utf-8')).rows
+        : [];
+    }
 
     // 读取活动日志
     const logs = fs.existsSync(logsPath) ?
@@ -2072,40 +2520,56 @@ app.get("/api/admin/overview/stats", async (req, res) => {
     // 计算对话统计
     try {
       // 读取对话数据
-      const conversationsData = readConversations();
+      const conversationsData = D1_ENABLED ? null : readConversations();
       const today = new Date().toISOString().split('T')[0];
       const userSet = new Set();      // 总聊天用户集合
       const todayUserSet = new Set(); // 当天聊天用户集合
 
-      // 遍历所有对话
-      for (const [username, userConversations] of Object.entries(conversationsData)) {
-        if (Array.isArray(userConversations)) {
-          userSet.add(username); // 添加用户到集合
-
-          for (const conversation of userConversations) {
-            if (conversation && conversation.messages) {
-              const messageCount = conversation.messages.length || 0;
-              conversationStats.totalMessages += messageCount;
-              conversationStats.totalConversations += 1;
-
-              // 判断是否为当天对话
-              let isToday = false;
-              if (conversation.updatedAt) {
-                const convoDate = new Date(conversation.updatedAt).toISOString().split('T')[0];
-                isToday = convoDate === today;
-              } else if (conversation.messages && conversation.messages.length > 0) {
-                // 使用最后一条消息的时间
-                const lastMsg = conversation.messages[conversation.messages.length - 1];
-                if (lastMsg.timestamp) {
-                  const convoDate = new Date(lastMsg.timestamp).toISOString().split('T')[0];
+      if (D1_ENABLED) {
+        const convResult = await d1Query("SELECT id, username, updated_at FROM conversations", []);
+        const conversations = convResult?.results || [];
+        for (const conv of conversations) {
+          const msgResult = await d1Query(
+            "SELECT id, created_at FROM messages WHERE conversation_id = ?",
+            [conv.id]
+          );
+          const msgs = msgResult?.results || [];
+          const messageCount = msgs.length;
+          conversationStats.totalMessages += messageCount;
+          conversationStats.totalConversations += 1;
+          if (conv.username) userSet.add(conv.username);
+          const convoDate = conv.updated_at ? new Date(conv.updated_at).toISOString().split('T')[0] : null;
+          if (convoDate === today) {
+            conversationStats.todayMessages += messageCount;
+            conversationStats.todayConversations += 1;
+            if (conv.username) todayUserSet.add(conv.username);
+          }
+        }
+      } else {
+        for (const [username, userConversations] of Object.entries(conversationsData || {})) {
+          if (Array.isArray(userConversations)) {
+            userSet.add(username);
+            for (const conversation of userConversations) {
+              if (conversation && conversation.messages) {
+                const messageCount = conversation.messages.length || 0;
+                conversationStats.totalMessages += messageCount;
+                conversationStats.totalConversations += 1;
+                let isToday = false;
+                if (conversation.updatedAt) {
+                  const convoDate = new Date(conversation.updatedAt).toISOString().split('T')[0];
                   isToday = convoDate === today;
+                } else if (conversation.messages && conversation.messages.length > 0) {
+                  const lastMsg = conversation.messages[conversation.messages.length - 1];
+                  if (lastMsg.timestamp) {
+                    const convoDate = new Date(lastMsg.timestamp).toISOString().split('T')[0];
+                    isToday = convoDate === today;
+                  }
                 }
-              }
-
-              if (isToday) {
-                conversationStats.todayMessages += messageCount;
-                conversationStats.todayConversations += 1;
-                todayUserSet.add(username);
+                if (isToday) {
+                  conversationStats.todayMessages += messageCount;
+                  conversationStats.todayConversations += 1;
+                  todayUserSet.add(username);
+                }
               }
             }
           }
@@ -2435,7 +2899,39 @@ function getTimeAgo(timestamp) {
 // 管理员获取游戏结果API（替换高危预警API）
 app.get("/api/admin/tasks", async (req, res) => {
   try {
-    // 读取results.csv中的所有游戏结果
+    if (D1_ENABLED) {
+      const result = await d1Query(
+        "SELECT id, username, data, created_at FROM results WHERE type = 'task' ORDER BY created_at DESC",
+        []
+      );
+      const rows = result?.results || [];
+      const tasks = rows.map((row) => {
+        const parsedData = safeParseJson(row.data) || {};
+        const task = {
+          _id: row.id,
+          username: row.username,
+          submittedAt: row.created_at,
+          taskData: parsedData,
+        };
+        if (parsedData.taskId) {
+          task.taskId = parsedData.taskId;
+          task.taskName = getTaskName(parsedData.taskId);
+        } else {
+          task.taskId = "Unknown";
+          task.taskName = "未知游戏";
+        }
+        if (parsedData.summary) {
+          task.summary = parsedData.summary;
+          task.accuracy = parsedData.summary.accuracy || 0;
+          task.meanRT = parsedData.summary.meanRT || 0;
+          task.performanceScore = calculatePerformanceScore(parsedData.summary);
+        }
+        task.fullData = parsedData;
+        return task;
+      });
+      return res.json(tasks);
+    }
+
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
     const tasks = [];
@@ -2501,16 +2997,49 @@ app.get("/api/admin/tasks", async (req, res) => {
 // 获取单个游戏的详细信息
 app.get("/api/admin/task/:id", async (req, res) => {
   try {
-    const taskId = parseInt(req.params.id);
+    const taskId = req.params.id;
+
+    if (D1_ENABLED) {
+      const result = await d1Query(
+        "SELECT id, username, data, created_at FROM results WHERE id = ? AND type = 'task' LIMIT 1",
+        [taskId]
+      );
+      const row = result?.results?.[0];
+      if (!row) return res.status(404).json({ error: '游戏记录不存在' });
+      const parsedData = safeParseJson(row.data) || {};
+      const task = {
+        _id: row.id,
+        username: row.username,
+        submittedAt: row.created_at,
+        fullData: parsedData,
+      };
+      if (parsedData.taskId) {
+        task.taskId = parsedData.taskId;
+        task.taskName = getTaskName(parsedData.taskId);
+      }
+      if (parsedData.summary) {
+        task.summary = parsedData.summary;
+        task.performanceScore = calculatePerformanceScore(parsedData.summary);
+      }
+      if (parsedData.config) {
+        task.config = parsedData.config;
+      }
+      if (parsedData.trials) {
+        task.trials = parsedData.trials;
+      }
+      return res.json(task);
+    }
+
+    const numericId = parseInt(taskId);
 
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
 
-    if (taskId <= 0 || taskId >= lines.length) {
+    if (numericId <= 0 || numericId >= lines.length) {
       return res.status(404).json({ error: '游戏记录不存在' });
     }
 
-    const values = parseCsvLine(lines[taskId]);
+    const values = parseCsvLine(lines[numericId]);
 
     if (values.length < 4 || values[1] !== 'task') {
       return res.status(404).json({ error: '不是有效的游戏记录' });
@@ -2527,7 +3056,7 @@ app.get("/api/admin/task/:id", async (req, res) => {
       const parsedData = JSON.parse(dataStr);
 
       const task = {
-        _id: taskId,
+        _id: numericId,
         username: values[0],
         submittedAt: values[3],
         fullData: parsedData

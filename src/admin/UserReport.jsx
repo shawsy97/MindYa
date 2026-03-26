@@ -133,6 +133,8 @@ export default function UserReport({ user, onBack }) {
     ANHEDONIA: { name: '快感缺失', abbr: 'Anhedonia', threshold: '当前仅做描述性展示' },
     ERQ: { name: '情绪调节（ERQ）', abbr: 'ERQ', threshold: '当前仅做描述性展示' },
     PHQ9_CHILD: { name: 'PHQ-9 抑郁量表', abbr: 'PHQ-9', threshold: '0–4 无/极轻；5–9 轻度；10–14 中度；15–19 中重度；20–27 重度；第9题需单独关注' },
+    SELF_HARM: { name: '自伤问卷（非自杀性自伤筛查）', abbr: 'NSSI', threshold: '任一题 ≥1 视为风险信号' },
+    SUICIDE: { name: '自杀问卷（风险筛查）', abbr: 'Suicide Screen', threshold: '任一题=有 视为风险信号' },
     NET_ADDICT: { name: '网络成瘾', abbr: 'IAT', threshold: '总分>45 达到筛查阈值' },
     ACADEMIC_BURNOUT: { name: '学业倦怠', abbr: 'Academic Burnout', threshold: '当前仅做描述性展示' },
     SCHOOL_AVERSION: { name: '厌学量表', abbr: 'School Aversion', threshold: '均分≥3 轻度；≥4 重度' },
@@ -148,6 +150,12 @@ export default function UserReport({ user, onBack }) {
     }
     if (scaleId === 'PHQ9_CHILD') {
       return `总分 ${score.total ?? '-'}；第9题 ${score.item9 ?? '-'}`;
+    }
+    if (scaleId === 'SELF_HARM') {
+      return `自伤想法 ${score.ideation ?? '-'}；自伤行为 ${score.behavior ?? '-'}`;
+    }
+    if (scaleId === 'SUICIDE') {
+      return `想法 ${score.ideation ?? '-'}；计划 ${score.plan ?? '-'}；企图 ${score.attempt ?? '-'}；次数 ${score.attemptCount ?? '-'}`;
     }
     if (scaleId === 'ANHEDONIA') {
       return `总分 ${score.total ?? '-'}；均分 ${score.mean ?? '-'}`;
@@ -173,13 +181,37 @@ export default function UserReport({ user, onBack }) {
     return `总分 ${score.total ?? '-'}`;
   };
 
+  const scaleOrder = [
+    'DASS21',
+    'PHQ9_CHILD',
+    'SELF_HARM',
+    'SUICIDE',
+    'ANHEDONIA',
+    'ERQ',
+    'NET_ADDICT',
+    'ACADEMIC_BURNOUT',
+    'SCHOOL_AVERSION',
+    'BULLYING',
+    'BULLYING_SIMPLE',
+    'SRSS',
+  ];
+
+  const getScaleIdsForReport = () => {
+    const present = Object.keys(activeReport?.scales || {});
+    const merged = [...scaleOrder];
+    present.forEach((id) => {
+      if (!merged.includes(id)) merged.push(id);
+    });
+    return merged;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       <div className="bg-white px-4 py-3 flex items-center border-b border-gray-200 shadow-sm sticky top-0 z-10">
         <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors mr-3">
           <ArrowLeft size={20} />
         </button>
-        <h2 className="text-lg font-semibold text-gray-900">心理报告</h2>
+        <h2 className="text-lg font-semibold text-gray-900">成长探索测量结果</h2>
         <button
           onClick={generateReport}
           className="ml-auto px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg flex items-center gap-1"
@@ -290,25 +322,29 @@ export default function UserReport({ user, onBack }) {
 
             <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
               <div className="text-sm font-semibold text-gray-900">量表解释</div>
-              {Object.keys(activeReport.scales || {}).map((scaleId) => (
-                <div key={scaleId} className="border rounded-xl p-3 space-y-2">
-                  <div className="text-sm font-semibold text-gray-900">
-                    {scaleMeta[scaleId]?.name || activeReport.scales?.[scaleId]?.scaleName || scaleId}
-                    <span className="text-xs text-gray-500 ml-2">{scaleMeta[scaleId]?.abbr || scaleId}</span>
+              {getScaleIdsForReport().map((scaleId) => {
+                const scaleData = activeReport.scales?.[scaleId];
+                const label = scaleMeta[scaleId]?.name || scaleData?.scaleName || scaleId;
+                return (
+                  <div key={scaleId} className="border rounded-xl p-3 space-y-2">
+                    <div className="text-sm font-semibold text-gray-900">
+                      {label}
+                      <span className="text-xs text-gray-500 ml-2">{scaleMeta[scaleId]?.abbr || scaleId}</span>
+                    </div>
+                    <div className="text-xs text-gray-500">阈值说明：{scaleMeta[scaleId]?.threshold || '—'}</div>
+                    <div className="text-xs text-gray-600">
+                      本次结果：{scaleData ? renderScaleScore(scaleId, scaleData) : '未测评'}
+                    </div>
+                    <textarea
+                      className="w-full border rounded-lg p-2 text-sm"
+                      rows={3}
+                      value={activeReport.content?.scaleInterpretations?.[scaleId] || ''}
+                      onChange={(e) => updateContent(`scale.${scaleId}`, e.target.value)}
+                      placeholder={scaleData ? "AI 解释或人工补充" : "未测评，可补充说明"}
+                    />
                   </div>
-                  <div className="text-xs text-gray-500">阈值说明：{scaleMeta[scaleId]?.threshold || '—'}</div>
-                  <div className="text-xs text-gray-600">
-                    本次结果：{renderScaleScore(scaleId, activeReport.scales?.[scaleId])}
-                  </div>
-                  <textarea
-                    className="w-full border rounded-lg p-2 text-sm"
-                    rows={3}
-                    value={activeReport.content?.scaleInterpretations?.[scaleId] || ''}
-                    onChange={(e) => updateContent(`scale.${scaleId}`, e.target.value)}
-                    placeholder="AI 解释或人工补充"
-                  />
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
