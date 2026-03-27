@@ -1,0 +1,12 @@
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM zeabur/caddy-static:latest
+COPY --from=build /app/dist /usr/share/caddy
