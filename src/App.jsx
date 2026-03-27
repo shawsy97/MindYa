@@ -24,7 +24,9 @@ import emotionSceneImg from './assets/theme-emotion-forest.png';
 import stressSceneImg from './assets/theme-stress-sea.png';
 import confidenceSceneImg from './assets/theme-confidence-garden.png';
 import sleepSceneImg from './assets/theme-sleep-planet.png';
-import relaxMeditationImg from './assets/relax/relax-meditation.png';
+import relaxChildImg from './assets/relax/relax-child.png';
+import relaxSleepImg from './assets/relax/relax-sleep.png';
+import relaxBreathingImg from './assets/relax/relax-breathing.png';
 import relaxBinauralImg from './assets/relax/relax-binaural.png';
 import waveAlphaImg from './assets/relax/wave-alpha.png';
 import waveBetaImg from './assets/relax/wave-beta.png';
@@ -1127,6 +1129,7 @@ function MoreTab({ user, username, onUpdateProfile, onLogout, initialTarget }) {
 function RelaxSpace({ username, onBack, initialTarget }) {
   const [view, setView] = useState('home');
   const [meditationList, setMeditationList] = useState([]);
+  const [activeMeditationCategory, setActiveMeditationCategory] = useState(null);
   const [binauralLists, setBinauralLists] = useState({});
   const [activeWave, setActiveWave] = useState(null);
   const [activeTrack, setActiveTrack] = useState(null);
@@ -1149,6 +1152,57 @@ function RelaxSpace({ username, onBack, initialTarget }) {
     const epMatch = base.match(/^ep\s*(\d+)$/i);
     if (epMatch) return `第 ${epMatch[1]} 集`;
     return base;
+  };
+
+  const meditationCategories = [
+    {
+      id: 'child',
+      label: '儿童冥想',
+      subtitle: '儿童专注力正念冥想',
+      desc: '鼻子的探索',
+      color: '#FAF8F1',
+      text: '#2F3A62',
+      art: relaxChildImg,
+      path: 'meditation/child-focus',
+      titles: ['儿童专注力正念冥想-鼻子的探索'],
+      playerBg: 'linear-gradient(180deg, #D8E5F7 0%, #CFE0F2 100%)',
+    },
+    {
+      id: 'sleep',
+      label: '睡前冥想',
+      subtitle: '轻柔放松',
+      desc: '5分钟身体扫描',
+      color: '#1A2752',
+      text: '#FFFFFF',
+      art: relaxSleepImg,
+      path: 'meditation/sleep',
+      titles: ['5分钟身体扫描'],
+      playerBg: 'linear-gradient(180deg, #F2E0E9 0%, #E7D2E0 100%)',
+    },
+    {
+      id: 'breathing',
+      label: '呼吸训练',
+      subtitle: '平稳呼吸 · 练习专注',
+      desc: '3分钟呼吸训练',
+      color: '#C9EBEC',
+      text: '#7A4B33',
+      art: relaxBreathingImg,
+      path: 'meditation/breathing',
+      titles: ['3分钟呼吸训练', '做情绪的主人'],
+      playerBg: 'linear-gradient(180deg, #F6DCC4 0%, #F3CFAE 100%)',
+    },
+  ];
+
+  useEffect(() => {
+    if (!activeMeditationCategory) {
+      setActiveMeditationCategory(meditationCategories[0]);
+    }
+  }, [activeMeditationCategory]);
+
+  const getMeditationTitle = (index, fallbackName) => {
+    const titles = activeMeditationCategory?.titles || [];
+    if (titles[index]) return titles[index];
+    return displayName(fallbackName);
   };
 
   const waves = [
@@ -1194,9 +1248,9 @@ function RelaxSpace({ username, onBack, initialTarget }) {
     },
   ];
 
-  const loadMeditations = async () => {
+  const loadMeditations = async (categoryPath) => {
     try {
-      const resp = await fetch(listUrl('meditation/mind-uncle-hls'));
+      const resp = await fetch(listUrl(categoryPath));
       const data = await resp.json();
       setMeditationList(Array.isArray(data.files) ? data.files : []);
     } catch {
@@ -1219,14 +1273,17 @@ function RelaxSpace({ username, onBack, initialTarget }) {
   };
 
   useEffect(() => {
-    if (view === 'meditationList') {
-      loadMeditations();
+    if (view === 'meditationList' && activeMeditationCategory) {
+      loadMeditations(activeMeditationCategory.path);
     }
-  }, [view]);
+  }, [view, activeMeditationCategory]);
 
   useEffect(() => {
     if (!initialTarget) return;
     if (initialTarget === "meditation") {
+      if (meditationCategories[0]) {
+        setActiveMeditationCategory(meditationCategories[0]);
+      }
       setView("meditationList");
     } else if (initialTarget === "binaural") {
       setView("binauralWaves");
@@ -1348,16 +1405,26 @@ function RelaxSpace({ username, onBack, initialTarget }) {
           <div className="text-[#4B3425] font-semibold text-lg">放松空间</div>
           <div className="text-xs text-[#8B7A6A] mt-1">今天想做些什么？</div>
           <div className="mt-4 columns-2 gap-3">
-            <button
-              onClick={() => setView('meditationList')}
-              className="mb-3 w-full break-inside-avoid rounded-[28px] bg-[#D7DDF3] p-3 text-left shadow-sm"
-            >
-              <div className="text-sm font-semibold text-[#2F3A62]">儿童冥想</div>
-              <div className="text-xs text-[#5B6A95] mt-1">正念大叔系列</div>
-              <div className="mt-3 rounded-2xl bg-white/60 p-2">
-                <img src={relaxMeditationImg} alt="儿童冥想插画" className="w-full h-auto" />
-              </div>
-            </button>
+            {meditationCategories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => {
+                  setActiveMeditationCategory(category);
+                  setView('meditationList');
+                }}
+                className="mb-3 w-full break-inside-avoid rounded-[28px] p-3 text-left shadow-sm flex flex-col overflow-hidden"
+                style={{ backgroundColor: category.color, color: category.text }}
+              >
+                <div className="text-sm font-semibold">{category.label}</div>
+                <div className="text-xs mt-1">{category.subtitle}</div>
+                <div className="text-xs opacity-80 mt-1">{category.desc}</div>
+                <img
+                  src={category.art}
+                  alt={`${category.label} 插图`}
+                  className="mt-auto w-full h-auto object-cover"
+                />
+              </button>
+            ))}
             <button
               onClick={() => setView('binauralWaves')}
               className="mb-3 w-full break-inside-avoid rounded-[28px] bg-[#FCE3D8] p-3 text-left shadow-sm"
@@ -1380,7 +1447,9 @@ function RelaxSpace({ username, onBack, initialTarget }) {
         <button onClick={() => setView('home')} className="text-sm text-[#8B7A6A]">
           ← 返回
         </button>
-        <div className="text-[#4B3425] font-semibold text-lg">儿童冥想 · 正念大叔</div>
+        <div className="text-[#4B3425] font-semibold text-lg">
+          {activeMeditationCategory?.label || '冥想'}
+        </div>
         <div className="space-y-3">
           {meditationList.map((item, idx) => (
             <button
@@ -1389,10 +1458,7 @@ function RelaxSpace({ username, onBack, initialTarget }) {
               className="w-full rounded-2xl bg-white border border-[#EFE7DE] p-4 text-left shadow-sm"
             >
               <div className="text-sm font-semibold text-[#4B3425]">
-                {(() => {
-                  const title = displayName(item.name);
-                  return title.startsWith("第 ") ? title : `第 ${idx + 1} 集 · ${title}`;
-                })()}
+                {getMeditationTitle(idx, item.name)}
               </div>
               <div className="text-xs text-[#8B7A6A] mt-1">点击播放</div>
             </button>
@@ -1403,16 +1469,18 @@ function RelaxSpace({ username, onBack, initialTarget }) {
   }
 
   if (view === 'meditationPlayer' && activeTrack) {
+    const playerTitle = activeMeditationCategory?.label || '冥想';
+    const trackTitle = getMeditationTitle(activeIndex, activeTrack.name);
     return (
       <div
         className="rounded-[32px] p-5 min-h-[520px] flex flex-col gap-4"
-        style={{ background: 'linear-gradient(180deg, #FAD7B2 0%, #F7C89A 100%)' }}
+        style={{ background: activeMeditationCategory?.playerBg || 'linear-gradient(180deg, #FAD7B2 0%, #F7C89A 100%)' }}
       >
         <div className="flex items-center justify-between text-[#4B3425]">
           <button onClick={() => setView('meditationList')} className="h-9 w-9 rounded-full bg-white/70 flex items-center justify-center">
             ←
           </button>
-          <div className="text-sm font-semibold">儿童冥想</div>
+          <div className="text-sm font-semibold">{playerTitle}</div>
           <div className="flex items-center gap-2">
             <button className="h-9 w-9 rounded-full bg-white/70 flex items-center justify-center" title="收藏">
               <Star size={16} />
@@ -1436,9 +1504,7 @@ function RelaxSpace({ username, onBack, initialTarget }) {
             controls
             playsInline
           />
-          <div className="text-sm text-[#6C5B50]">
-            正念大叔 · 第 {activeIndex + 1} 集
-          </div>
+          <div className="text-sm text-[#6C5B50]">{trackTitle}</div>
           <div className="flex items-center gap-4">
             <button onClick={playPrev} className="h-10 w-10 rounded-full bg-white/80">«</button>
             <button onClick={playNext} className="h-10 w-10 rounded-full bg-white/80">»</button>
