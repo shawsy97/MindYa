@@ -82,9 +82,22 @@ export default function UserReport({ user, onBack }) {
     }
   };
 
-  const exportPdf = () => {
+  const exportPdf = async () => {
     if (!activeReport) return;
-    window.open(`${API_BASE}/api/admin/report/${activeReport.id}/pdf`, '_blank');
+    setLoading(true);
+    setError('');
+    try {
+      const resp = await fetch(`${API_BASE}/api/admin/report/${activeReport.id}/pdf-url`);
+      const data = await resp.json();
+      if (!resp.ok || !data?.url) {
+        throw new Error(data?.error || 'No url');
+      }
+      window.open(data.url, '_blank');
+    } catch (e) {
+      setError('导出失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {

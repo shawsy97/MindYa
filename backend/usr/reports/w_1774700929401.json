@@ -1,0 +1,433 @@
+{
+  "id": "w_1774700929401",
+  "username": "w",
+  "version": "v1",
+  "createdAt": "2026-03-28T12:28:49.401Z",
+  "updatedAt": "2026-03-28T12:28:49.401Z",
+  "profile": {
+    "username": "w",
+    "age": ">18岁",
+    "grade": "高中",
+    "gender": "女生"
+  },
+  "themeMap": {
+    "emotion_forest": [
+      "DASS21",
+      "ANHEDONIA",
+      "ERQ"
+    ],
+    "digital_island": [
+      "NET_ADDICT"
+    ],
+    "stress_sea": [
+      "ACADEMIC_BURNOUT",
+      "SCHOOL_AVERSION"
+    ],
+    "confidence_garden": [
+      "BULLYING"
+    ],
+    "sleep_planet": [
+      "SRSS"
+    ]
+  },
+  "scales": {
+    "NET_ADDICT": {
+      "scaleId": "NET_ADDICT",
+      "scaleName": "青少年上网成瘾自评量表",
+      "createdAt": "2026-03-28T08:48:28.942Z",
+      "score": {
+        "total": 61,
+        "range": "17-85",
+        "symptom": 50,
+        "cause": 11,
+        "threshold": 45
+      },
+      "level": {
+        "status": "超过阈值"
+      },
+      "flags": {
+        "riskLevel": "high"
+      },
+      "answers": {
+        "n1": 5,
+        "n2": 5,
+        "n3": 4,
+        "n4": 5,
+        "n5": 4,
+        "n6": 4,
+        "n7": 3,
+        "n8": 3,
+        "n9": 2,
+        "n10": 3,
+        "n11": 3,
+        "n12": 4,
+        "n13": 5,
+        "n14": 2,
+        "n15": 4,
+        "n16": 2,
+        "n17": 3
+      }
+    },
+    "SRSS": {
+      "scaleId": "SRSS",
+      "scaleName": "学生风险筛查量表",
+      "createdAt": "2026-03-28T08:51:45.809Z",
+      "score": {
+        "total": 40,
+        "range": "10-50"
+      },
+      "level": {
+        "total": "重度睡眠障碍"
+      },
+      "flags": {
+        "riskLevel": "high"
+      },
+      "answers": {
+        "s1": 5,
+        "s2": 3,
+        "s3": 5,
+        "s4": 4,
+        "s5": 4,
+        "s6": 4,
+        "s7": 4,
+        "s8": 3,
+        "s9": 3,
+        "s10": 5
+      }
+    },
+    "DASS21": {
+      "scaleId": "DASS21",
+      "scaleName": "DASS21",
+      "createdAt": "2026-03-28T08:53:25.902Z",
+      "score": {
+        "depression": 34,
+        "anxiety": 22,
+        "stress": 28
+      },
+      "level": {
+        "depression": "极重度",
+        "anxiety": "极重度",
+        "stress": "重度"
+      },
+      "flags": {
+        "riskLevel": "medium"
+      },
+      "answers": {
+        "q1": 2,
+        "q6": 2,
+        "q8": 2,
+        "q11": 2,
+        "q12": 2,
+        "q14": 2,
+        "q18": 2,
+        "q2": 1,
+        "q4": 2,
+        "q7": 1,
+        "q9": 3,
+        "q15": 1,
+        "q19": 2,
+        "q20": 1,
+        "q3": 1,
+        "q5": 2,
+        "q10": 2,
+        "q13": 3,
+        "q16": 3,
+        "q17": 3,
+        "q21": 3
+      }
+    },
+    "ANHEDONIA": {
+      "scaleId": "ANHEDONIA",
+      "scaleName": "ANHEDONIA",
+      "createdAt": "2026-03-28T08:54:49.473Z",
+      "score": {
+        "total": 34,
+        "mean": 2.43,
+        "items": 14,
+        "reversedItems": 3
+      },
+      "level": {
+        "summary": "分数越高表示开心感降低体验越明显",
+        "tier": "持续低落"
+      },
+      "flags": {
+        "riskLevel": "high"
+      },
+      "answers": {
+        "a1": 2,
+        "a2": 3,
+        "a3": 3,
+        "a4": 2,
+        "a5": 3,
+        "a6": 2,
+        "a7": 2,
+        "a8": 1,
+        "a9": 2,
+        "a10": 1,
+        "a11": 0,
+        "a12": 3,
+        "a13": 3,
+        "a14": 0
+      }
+    },
+    "ERQ": {
+      "scaleId": "ERQ",
+      "scaleName": "情绪调节问卷",
+      "createdAt": "2026-03-28T08:56:41.798Z",
+      "score": {
+        "reappraisal_mean": 3.17,
+        "suppression_mean": 6,
+        "reappraisal_sum": 19,
+        "suppression_sum": 24
+      },
+      "level": {
+        "strategy": "更偏向表达抑制",
+        "summary": "你更习惯把情绪先收起来，之后再慢慢消化。"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "e1": 4,
+        "e2": 7,
+        "e3": 1,
+        "e4": 3,
+        "e5": 7,
+        "e6": 7,
+        "e7": 1,
+        "e8": 1,
+        "e9": 7,
+        "e10": 5
+      }
+    },
+    "SELF_HARM": {
+      "scaleId": "SELF_HARM",
+      "scaleName": "自伤问卷（非自杀性自伤筛查）",
+      "createdAt": "2026-03-28T08:56:54.935Z",
+      "score": {
+        "ideation": 2,
+        "behavior": 2
+      },
+      "level": {
+        "summary": "过去1个月内出现过自伤行为"
+      },
+      "flags": {
+        "riskLevel": "high",
+        "selfHarmIdeation": true,
+        "selfHarmBehavior": true,
+        "hasConcern": true,
+        "timeWindow": "1m"
+      },
+      "answers": {
+        "sh1": 2,
+        "sh2": 2
+      }
+    },
+    "BULLYING": {
+      "scaleId": "BULLYING",
+      "scaleName": "BULLYING",
+      "createdAt": "2026-03-28T08:58:21.436Z",
+      "score": {
+        "victim_sum": 20,
+        "bully_sum": 4,
+        "victim_mean": 2.5,
+        "bully_mean": 0.5
+      },
+      "level": {
+        "summary": "过去一年中报告过欺凌相关行为或经历"
+      },
+      "flags": {
+        "riskLevel": "medium",
+        "victim": true,
+        "bully": true,
+        "hasConcern": true
+      },
+      "answers": {
+        "v1": 3,
+        "v2": 3,
+        "v3": 2,
+        "v4": 2,
+        "v5": 3,
+        "v6": 2,
+        "v7": 2,
+        "v8": 3,
+        "b1": 1,
+        "b2": 3,
+        "b3": 0,
+        "b4": 0,
+        "b5": 0,
+        "b6": 0,
+        "b7": 0,
+        "b8": 0
+      }
+    },
+    "ACADEMIC_BURNOUT": {
+      "scaleId": "ACADEMIC_BURNOUT",
+      "scaleName": "ACADEMIC_BURNOUT",
+      "createdAt": "2026-03-28T08:59:08.222Z",
+      "score": {
+        "total": 80,
+        "mean": 5,
+        "items": 16,
+        "reversedItems": 7
+      },
+      "level": {
+        "total": "—"
+      },
+      "flags": {
+        "riskLevel": "low"
+      },
+      "answers": {
+        "ab1": 1,
+        "ab2": 5,
+        "ab3": 5,
+        "ab4": 1,
+        "ab5": 5,
+        "ab6": 5,
+        "ab7": 1,
+        "ab8": 5,
+        "ab9": 5,
+        "ab10": 5,
+        "ab11": 1,
+        "ab12": 5,
+        "ab13": 5,
+        "ab14": 1,
+        "ab15": 1,
+        "ab16": 1
+      }
+    },
+    "SCHOOL_AVERSION": {
+      "scaleId": "SCHOOL_AVERSION",
+      "scaleName": "SCHOOL_AVERSION",
+      "createdAt": "2026-03-28T08:59:36.470Z",
+      "score": {
+        "total": 85,
+        "mean": 5,
+        "items": 17,
+        "range": "17-85"
+      },
+      "level": {
+        "total": "重度厌学"
+      },
+      "flags": {
+        "riskLevel": "high"
+      },
+      "answers": {
+        "sa1": 5,
+        "sa2": 5,
+        "sa3": 5,
+        "sa4": 5,
+        "sa5": 5,
+        "sa6": 5,
+        "sa7": 5,
+        "sa8": 5,
+        "sa9": 5,
+        "sa10": 5,
+        "sa11": 5,
+        "sa12": 5,
+        "sa13": 5,
+        "sa14": 5,
+        "sa15": 5,
+        "sa16": 5,
+        "sa17": 5
+      }
+    },
+    "SUICIDE": {
+      "scaleId": "SUICIDE",
+      "scaleName": "自杀问卷（风险筛查）",
+      "createdAt": "2026-03-28T08:57:04.369Z",
+      "score": {
+        "ideation": 1,
+        "plan": 1,
+        "attempt": 0,
+        "attemptCount": 2
+      },
+      "level": {
+        "summary": "存在较高自杀风险信号（计划或企图/尝试）"
+      },
+      "flags": {
+        "riskLevel": "high",
+        "suicideIdeation": true,
+        "suicidePlan": true,
+        "suicideAttempt": true,
+        "hasConcern": true
+      },
+      "answers": {
+        "su1": 1,
+        "su2": 1,
+        "su3": 0,
+        "su4": 2
+      }
+    }
+  },
+  "content": {
+    "overallConclusion": {
+      "stableAreas": [
+        "情绪调节策略"
+      ],
+      "attentionAreas": [
+        "学业倦怠",
+        "欺凌经历"
+      ],
+      "highRiskAreas": [
+        "上网成瘾",
+        "睡眠障碍",
+        "抑郁焦虑",
+        "快感缺乏",
+        "自伤行为",
+        "厌学情绪",
+        "自杀风险"
+      ]
+    },
+    "themeSummaries": {
+      "emotion_forest": "在情绪森林中，您表现出较高的抑郁、焦虑和压力水平，并且有明显的快感缺乏体验。您的情绪调节策略偏向于表达抑制。",
+      "digital_island": "在数字岛屿上，您的上网行为已达到成瘾标准，需要引起重视。",
+      "stress_sea": "在压力海洋里，您对学校的厌恶情绪非常强烈，同时存在一定的学业倦怠。",
+      "confidence_garden": "在自信花园中，您在过去一年中有过被欺凌的经历。",
+      "sleep_planet": "在睡眠星球上，您正遭受重度睡眠障碍的困扰。"
+    },
+    "scaleInterpretations": {
+      "NET_ADDICT": "您的青少年上网成瘾自评量表得分较高，表明可能存在上网成瘾的问题。",
+      "SRSS": "学生风险筛查量表显示您目前处于重度睡眠障碍状态。",
+      "DASS21": "DASS21量表结果显示您当前面临极重度的抑郁与焦虑以及重度的压力。",
+      "ANHEDONIA": "快感缺乏量表分数表明您近期体验到持续的情绪低落。",
+      "ERQ": "情绪调节问卷提示您更倾向于使用表达抑制的方式来处理负面情绪。",
+      "SELF_HARM": "自伤问卷揭示了您在过去一个月内有过自伤的想法及行为。",
+      "BULLYING": "欺凌量表显示您在过去一年中既是欺凌受害者也是实施者之一。",
+      "ACADEMIC_BURNOUT": "学术倦怠量表得分较低，说明您可能感到学习动力不足。",
+      "SCHOOL_AVERSION": "学校厌恶量表得分极高，反映出强烈的厌学情绪。",
+      "SUICIDE": "自杀风险评估显示您存在自杀念头及计划，但没有实际尝试记录。"
+    },
+    "riskWarnings": [
+      "上网成瘾可能导致日常生活功能受损，请尽快寻求专业帮助。",
+      "严重的睡眠问题会影响身心健康，请考虑咨询医生或心理咨询师。",
+      "抑郁、焦虑症状严重时需及时就医，避免情况恶化。",
+      "快感缺乏可能是抑郁症的一个标志，建议尽早进行心理干预。",
+      "自伤行为是一种危险信号，应立即停止并寻找安全的支持途径。",
+      "对于自杀倾向必须高度重视，务必告知家人或朋友，并联系专业人士获得紧急援助。",
+      "长期遭受欺凌会对心理健康造成负面影响，鼓励向可信赖的人倾诉感受。"
+    ],
+    "comprehensiveAnalysis": "综合来看，您当前面临着多方面的心理挑战，包括但不限于情绪障碍、网络依赖、睡眠质量差等。这些问题相互交织，共同影响着您的生活质量。建议采取积极措施应对上述困难，如调整作息时间、减少屏幕使用频率、参加兴趣小组活动以增强社交支持网络等。同时，也请不要犹豫寻求来自家庭成员、教师或心理咨询专家的帮助。",
+    "interventions": {
+      "daily": [
+        "每天安排固定时间进行户外运动，改善心情。",
+        "尝试冥想或深呼吸练习来缓解紧张情绪。",
+        "保证充足睡眠，睡前远离电子设备。",
+        "培养健康的生活习惯，比如规律饮食、适量饮水。"
+      ],
+      "homeSchool": [
+        "与家长沟通自己的困扰，争取理解和支持。",
+        "向老师反映学习上的难题，请求适当减轻负担。",
+        "加入校园社团或兴趣小组，拓宽交友圈子。",
+        "遇到欺凌事件时勇敢地说出来，寻求校方介入解决。"
+      ],
+      "professional": [
+        "预约精神科医生进行全面检查，必要时接受药物治疗。",
+        "定期参加心理咨询会谈，探索内心世界。",
+        "参与认知行为疗法小组，学习有效应对技巧。",
+        "如果感到极度痛苦难以自我调节，立刻拨打紧急热线求助。"
+      ]
+    },
+    "notes": "本报告为自动生成的筛查性反馈，最终解释需由专业人员结合实际情况完成。"
+  }
+}

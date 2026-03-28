@@ -1686,3 +1686,47 @@
 {"type":"system","event":"api_success","endpoint":"/api/ai/context?username=xsy","method":"GET","status":200,"duration_ms":20252,"timestamp":"2026-03-28T10:52:05.545Z"}
 {"type":"system","event":"ai_context_generated","endpoint":"/api/ai/context","username":"xsy","risk_stage":1,"timestamp":"2026-03-28T10:52:18.295Z"}
 {"type":"system","event":"api_success","endpoint":"/api/ai/context?username=xsy","method":"GET","status":200,"duration_ms":12993,"timestamp":"2026-03-28T10:52:18.296Z"}
+{"type":"system","event":"api_success","endpoint":"/api/profile/xsy","method":"GET","status":304,"duration_ms":1463,"timestamp":"2026-03-28T11:33:11.080Z"}
+{"type":"system","event":"api_success","endpoint":"/api/profile/xsy","method":"GET","status":304,"duration_ms":376,"timestamp":"2026-03-28T11:33:11.457Z"}
+{"type":"system","event":"api_success","endpoint":"/api/history/xsy","method":"GET","status":304,"duration_ms":3514,"timestamp":"2026-03-28T11:33:14.615Z"}
+{"type":"system","event":"api_success","endpoint":"/api/profile/xsy","method":"GET","status":304,"duration_ms":380,"timestamp":"2026-03-28T11:38:07.430Z"}
+{"type":"system","event":"api_success","endpoint":"/api/profile/xsy","method":"GET","status":304,"duration_ms":386,"timestamp":"2026-03-28T11:38:07.817Z"}
+{"type":"system","event":"api_success","endpoint":"/api/history/xsy","method":"GET","status":304,"duration_ms":3710,"timestamp":"2026-03-28T11:38:11.156Z"}
+{"type":"system","event":"api_success","endpoint":"/api/history/xsy","method":"GET","status":304,"duration_ms":3276,"timestamp":"2026-03-28T11:38:14.432Z"}
+{"type":"system","event":"api_success","endpoint":"/api/profile/xsy","method":"GET","status":304,"duration_ms":914,"timestamp":"2026-03-28T11:38:17.359Z"}
+{"type":"system","event":"api_success","endpoint":"/api/profile/xsy","method":"GET","status":304,"duration_ms":773,"timestamp":"2026-03-28T11:38:18.133Z"}
+{"type":"system","event":"api_success","endpoint":"/api/history/xsy","method":"GET","status":304,"duration_ms":3932,"timestamp":"2026-03-28T11:38:21.333Z"}
+{"type":"system","event":"api_success","endpoint":"/api/history/xsy","method":"GET","status":304,"duration_ms":-1242,"timestamp":"2026-03-28T11:38:20.094Z"}
+{"type":"system","event":"api_error","endpoint":"/api/chat","status":500,"error_code":"QWEN_TIMEOUT","detail":"TypeError: fetch failed","timestamp":"2026-03-28T11:54:19.831Z"}
+{"type":"system","event":"ai_context_generated","endpoint":"/api/ai/context","username":"xsy","risk_stage":1,"timestamp":"2026-03-28T11:54:35.946Z"}
+{"type":"system","event":"api_success","endpoint":"/api/ai/context?username=xsy","method":"GET","status":200,"duration_ms":962549,"timestamp":"2026-03-28T11:54:35.953Z"}
+{"type":"system","event":"api_error","endpoint":"/api/chat","status":500,"error_code":"QWEN_TIMEOUT","detail":"TypeError: fetch failed","timestamp":"2026-03-28T11:54:45.124Z"}
+{"type":"system","event":"api_error","endpoint":"/api/chat","status":500,"error_code":"QWEN_TIMEOUT","detail":"TypeError: fetch failed","timestamp":"2026-03-28T11:54:54.401Z"}
+{"type":"system","event":"api_error","endpoint":"/api/chat","method":"POST","status":500,"duration_ms":996997,"timestamp":"2026-03-28T11:54:54.401Z"}
+{"type":"system","event":"api_error","endpoint":"/api/ai/context?username=xsy","method":"GET","status":500,"duration_ms":997193,"timestamp":"2026-03-28T11:54:54.594Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/login","method":"POST","status":200,"duration_ms":3,"timestamp":"2026-03-28T12:12:39.117Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/users","method":"GET","status":200,"duration_ms":3910,"timestamp":"2026-03-28T12:12:43.067Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/scales","method":"GET","status":200,"duration_ms":935,"timestamp":"2026-03-28T12:12:44.011Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/users","method":"GET","status":304,"duration_ms":992,"timestamp":"2026-03-28T12:12:44.064Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/scales","method":"GET","status":304,"duration_ms":406,"timestamp":"2026-03-28T12:12:44.475Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/tasks","method":"GET","status":200,"duration_ms":604,"timestamp":"2026-03-28T12:12:44.621Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/tasks","method":"GET","status":304,"duration_ms":566,"timestamp":"2026-03-28T12:12:45.192Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/conversations","method":"GET","status":200,"duration_ms":5898,"timestamp":"2026-03-28T12:12:50.526Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/conversations","method":"GET","status":304,"duration_ms":7748,"timestamp":"2026-03-28T12:12:58.282Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/overview/stats","method":"GET","status":200,"duration_ms":8749,"timestamp":"2026-03-28T12:12:59.283Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/overview/activities","method":"GET","status":200,"duration_ms":60,"timestamp":"2026-03-28T12:12:59.359Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/overview/stats","method":"GET","status":200,"duration_ms":7859,"timestamp":"2026-03-28T12:13:07.149Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/overview/activities","method":"GET","status":304,"duration_ms":5,"timestamp":"2026-03-28T12:13:07.160Z"}
+{"type":"system","event":"service_start","endpoint":"server","status":200,"timestamp":"2026-03-28T12:26:42.030Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/xsy","method":"GET","status":304,"duration_ms":1287,"timestamp":"2026-03-28T12:26:59.135Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/xsy","method":"GET","status":304,"duration_ms":1256,"timestamp":"2026-03-28T12:27:00.395Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/w","method":"GET","status":200,"duration_ms":1204,"timestamp":"2026-03-28T12:27:08.433Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/w","method":"GET","status":304,"duration_ms":951,"timestamp":"2026-03-28T12:27:09.388Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/xsy","method":"GET","status":304,"duration_ms":923,"timestamp":"2026-03-28T12:27:46.111Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/xsy","method":"GET","status":304,"duration_ms":1463,"timestamp":"2026-03-28T12:27:47.578Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/w","method":"GET","status":304,"duration_ms":923,"timestamp":"2026-03-28T12:27:52.991Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/w","method":"GET","status":304,"duration_ms":918,"timestamp":"2026-03-28T12:27:53.911Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/generate","method":"POST","status":200,"duration_ms":60365,"timestamp":"2026-03-28T12:28:54.978Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/user/w","method":"GET","status":200,"duration_ms":1380,"timestamp":"2026-03-28T12:28:56.374Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/w_1774700929401/pdf-url","method":"GET","status":200,"duration_ms":14505,"timestamp":"2026-03-28T12:29:24.484Z"}
+{"type":"system","event":"api_success","endpoint":"/api/admin/report/w_1774700929401/pdf-url","method":"GET","status":200,"duration_ms":2050,"timestamp":"2026-03-28T12:29:43.446Z"}

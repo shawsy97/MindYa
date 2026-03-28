@@ -6,7 +6,13 @@ const path = require("path");
 const bcrypt = require('bcryptjs');
 const puppeteer = require("puppeteer");
 const crypto = require("crypto");
-const { S3Client, ListObjectsV2Command, GetObjectCommand } = require("@aws-sdk/client-s3");
+const {
+  S3Client,
+  ListObjectsV2Command,
+  GetObjectCommand,
+  PutObjectCommand,
+  HeadObjectCommand,
+} = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 require('dotenv').config(); // ← 加载 .env 文件
@@ -49,6 +55,10 @@ const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || "";
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
 const R2_BUCKET = process.env.R2_BUCKET || "";
 const R2_MEDIA_PREFIX = process.env.R2_MEDIA_PREFIX || "media";
+const R2_REPORTS_PREFIX = process.env.R2_REPORTS_PREFIX || "reports";
+const R2_PUBLIC_BASE =
+  process.env.R2_PUBLIC_BASE ||
+  (R2_BUCKET && R2_ACCOUNT_ID ? `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.dev` : "");
 const R2_ENABLED = Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET);
 const D1_ACCOUNT_ID = process.env.D1_ACCOUNT_ID || "";
 const D1_DATABASE_ID = process.env.D1_DATABASE_ID || "";
@@ -245,17 +255,48 @@ const createUser = async ({ username, password }) => {
   return { username };
 };
 
-const readReportsIndex = () => {
+const readReportsIndex = async () => {
   ensureDataFiles();
+  let localIndex = [];
   try {
-    return JSON.parse(fs.readFileSync(reportsIndexPath, "utf-8"));
+    localIndex = JSON.parse(fs.readFileSync(reportsIndexPath, "utf-8"));
   } catch {
-    return [];
+    localIndex = [];
+  }
+  if (!R2_ENABLED) return localIndex;
+  const key = `${R2_REPORTS_PREFIX}/index.json`;
+  try {
+    const client = getR2Client();
+    if (!client) return localIndex;
+    const resp = await client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    const raw = await streamToString(resp.Body);
+    const remoteIndex = JSON.parse(raw || "[]");
+    fs.writeFileSync(reportsIndexPath, JSON.stringify(remoteIndex, null, 2), "utf-8");
+    return Array.isArray(remoteIndex) ? remoteIndex : localIndex;
+  } catch {
+    return localIndex;
   }
 };
 
-const writeReportsIndex = (index) => {
+const writeReportsIndex = async (index) => {
   fs.writeFileSync(reportsIndexPath, JSON.stringify(index, null, 2), "utf-8");
+  if (!R2_ENABLED) return;
+  try {
+    const client = getR2Client();
+    if (!client) return;
+    const key = `${R2_REPORTS_PREFIX}/index.json`;
+    await client.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        Body: JSON.stringify(index, null, 2),
+        ContentType: "application/json",
+        CacheControl: "no-store",
+      })
+    );
+  } catch (error) {
+    console.warn("Upload report index to R2 failed:", error.message);
+  }
 };
 
 const getMimeType = (filename) => {
@@ -284,6 +325,14 @@ const streamToString = async (stream) => {
   return Buffer.concat(chunks).toString("utf-8");
 };
 
+const streamToBuffer = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+};
+
 const listR2Objects = async (prefix) => {
   const client = getR2Client();
   if (!client) return [];
@@ -309,6 +358,48 @@ const getSignedR2Url = async (key, expiresIn = 600) => {
   if (!client) return "";
   const command = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
   return getSignedUrl(client, command, { expiresIn });
+};
+
+const buildR2PublicUrl = (key) => {
+  if (!R2_PUBLIC_BASE) return "";
+  const base = R2_PUBLIC_BASE.replace(/\/+$/, "");
+  const cleanKey = String(key || "").replace(/^\/+/, "");
+  return cleanKey ? `${base}/${cleanKey}` : base;
+};
+
+const uploadToR2 = async (key, body, contentType, contentDisposition = "") => {
+  const client = getR2Client();
+  if (!client) throw new Error("R2 unavailable");
+  const params = {
+    Bucket: R2_BUCKET,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  };
+  if (contentDisposition) params.ContentDisposition = contentDisposition;
+  await client.send(new PutObjectCommand(params));
+};
+
+const getReportKey = (reportId, ext) => `${R2_REPORTS_PREFIX}/${reportId}.${ext}`;
+
+const readReportJson = async (record) => {
+  const fallbackKey = record?.id ? getReportKey(record.id, "json") : "";
+  const r2JsonKey = record?.r2JsonKey || fallbackKey;
+  if (r2JsonKey && R2_ENABLED) {
+    try {
+      const client = getR2Client();
+      if (client) {
+        const resp = await client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: r2JsonKey }));
+        const raw = await streamToString(resp.Body);
+        return JSON.parse(raw);
+      }
+    } catch (error) {
+      console.warn("Read report JSON from R2 failed:", error.message);
+    }
+  }
+  const reportPath = record?.jsonPath;
+  if (!reportPath || !fs.existsSync(reportPath)) return null;
+  return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
 };
 
 const csvEscape = (value) => {
@@ -1833,7 +1924,7 @@ const generateReportPdfBuffer = async (report) => {
 app.get("/api/admin/report/user/:username", async (req, res) => {
   try {
     const { username } = req.params;
-    const index = readReportsIndex();
+    const index = await readReportsIndex();
     const reports = index.filter((r) => r.username === username);
     return res.json({ reports });
   } catch (error) {
@@ -1845,10 +1936,11 @@ app.get("/api/admin/report/user/:username", async (req, res) => {
 app.get("/api/admin/report/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const index = readReportsIndex();
+    const index = await readReportsIndex();
     const record = index.find((r) => r.id === id);
     if (!record) return res.status(404).json({ error: "Report not found" });
-    const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
+    const report = await readReportJson(record);
+    if (!report) return res.status(404).json({ error: "Report not found" });
     return res.json(report);
   } catch (error) {
     console.error("Get report error:", error);
@@ -1866,7 +1958,19 @@ app.post("/api/admin/report/generate", async (req, res) => {
     const pdfPath = path.join(reportsDir, `${report.id}.pdf`);
     fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2), "utf-8");
 
-    const index = readReportsIndex();
+    let r2JsonKey = "";
+    let r2JsonUrl = "";
+    if (R2_ENABLED) {
+      try {
+        r2JsonKey = getReportKey(report.id, "json");
+        await uploadToR2(r2JsonKey, JSON.stringify(report, null, 2), "application/json");
+        r2JsonUrl = buildR2PublicUrl(r2JsonKey);
+      } catch (error) {
+        console.warn("Upload report JSON to R2 failed:", error.message);
+      }
+    }
+
+    const index = await readReportsIndex();
     index.unshift({
       id: report.id,
       username,
@@ -1874,8 +1978,10 @@ app.post("/api/admin/report/generate", async (req, res) => {
       updatedAt: report.updatedAt,
       jsonPath,
       pdfPath,
+      r2JsonKey,
+      r2JsonUrl,
     });
-    writeReportsIndex(index);
+    await writeReportsIndex(index);
 
     return res.json(report);
   } catch (error) {
@@ -1888,17 +1994,29 @@ app.put("/api/admin/report/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { content } = req.body || {};
-    const index = readReportsIndex();
+    const index = await readReportsIndex();
     const record = index.find((r) => r.id === id);
     if (!record) return res.status(404).json({ error: "Report not found" });
 
-    const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
+    const report = await readReportJson(record);
+    if (!report) return res.status(404).json({ error: "Report not found" });
     report.content = content || report.content;
     report.updatedAt = new Date().toISOString();
     fs.writeFileSync(record.jsonPath, JSON.stringify(report, null, 2), "utf-8");
 
+    if (R2_ENABLED) {
+      try {
+        const r2JsonKey = record.r2JsonKey || getReportKey(record.id, "json");
+        await uploadToR2(r2JsonKey, JSON.stringify(report, null, 2), "application/json");
+        record.r2JsonKey = r2JsonKey;
+        record.r2JsonUrl = buildR2PublicUrl(r2JsonKey);
+      } catch (error) {
+        console.warn("Upload report JSON to R2 failed:", error.message);
+      }
+    }
+
     record.updatedAt = report.updatedAt;
-    writeReportsIndex(index);
+    await writeReportsIndex(index);
 
     return res.json(report);
   } catch (error) {
@@ -1910,22 +2028,96 @@ app.put("/api/admin/report/:id", async (req, res) => {
 app.get("/api/admin/report/:id/pdf", async (req, res) => {
   try {
     const { id } = req.params;
-    const index = readReportsIndex();
+    const index = await readReportsIndex();
     const record = index.find((r) => r.id === id);
     if (!record) return res.status(404).json({ error: "Report not found" });
 
-    const report = JSON.parse(fs.readFileSync(record.jsonPath, "utf-8"));
+    if (R2_ENABLED) {
+      try {
+        const r2PdfKey = record.r2PdfKey || getReportKey(record.id, "pdf");
+        const client = getR2Client();
+        if (client) {
+          await client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: r2PdfKey }));
+          if (!record.r2PdfKey) {
+            record.r2PdfKey = r2PdfKey;
+            await writeReportsIndex(index);
+          }
+          const signed = await getSignedR2Url(r2PdfKey, 600);
+          return res.redirect(302, signed);
+        }
+      } catch (error) {
+        console.warn("Read report PDF from R2 failed:", error.message);
+      }
+    }
+
+    const report = await readReportJson(record);
+    if (!report) return res.status(404).json({ error: "Report not found" });
     const pdfBuffer = await generateReportPdfBuffer(report);
     const pdfBytes = Buffer.from(pdfBuffer);
+    if (R2_ENABLED) {
+      try {
+        const r2PdfKey = record.r2PdfKey || getReportKey(record.id, "pdf");
+        await uploadToR2(
+          r2PdfKey,
+          pdfBytes,
+          "application/pdf",
+          `attachment; filename="${record.id}.pdf"`
+        );
+        record.r2PdfKey = r2PdfKey;
+        await writeReportsIndex(index);
+        const signed = await getSignedR2Url(r2PdfKey, 600);
+        return res.redirect(302, signed);
+      } catch (error) {
+        console.warn("Upload report PDF to R2 failed:", error.message);
+      }
+    }
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${record.id}.pdf"`
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${record.id}.pdf"`);
     res.setHeader("Cache-Control", "no-store");
     return res.send(pdfBytes);
   } catch (error) {
     console.error("Generate report pdf error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/admin/report/:id/pdf-url", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = await readReportsIndex();
+    const record = index.find((r) => r.id === id);
+    if (!record) return res.status(404).json({ error: "Report not found" });
+
+    if (!R2_ENABLED) {
+      const base = `${req.protocol}://${req.get("host")}`;
+      return res.json({ url: `${base}/api/admin/report/${id}/pdf` });
+    }
+
+    const r2PdfKey = record.r2PdfKey || getReportKey(record.id, "pdf");
+    const client = getR2Client();
+    if (!client) return res.status(500).json({ error: "R2 unavailable" });
+
+    try {
+      await client.send(new HeadObjectCommand({ Bucket: R2_BUCKET, Key: r2PdfKey }));
+    } catch {
+      const report = await readReportJson(record);
+      if (!report) return res.status(404).json({ error: "Report not found" });
+      const pdfBuffer = await generateReportPdfBuffer(report);
+      const pdfBytes = Buffer.from(pdfBuffer);
+      await uploadToR2(
+        r2PdfKey,
+        pdfBytes,
+        "application/pdf",
+        `attachment; filename="${record.id}.pdf"`
+      );
+      record.r2PdfKey = r2PdfKey;
+      await writeReportsIndex(index);
+    }
+
+    const signed = await getSignedR2Url(r2PdfKey, 600);
+    return res.json({ url: signed });
+  } catch (error) {
+    console.error("Generate report pdf url error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
