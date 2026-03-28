@@ -1277,6 +1277,8 @@ const callReportAI = async (input) => {
     "scaleInterpretations 为 scaleId 到解释文字的映射。",
     "interventions 包含 daily, homeSchool, professional 三个字段。",
     "用中文，避免诊断性结论，强调支持性建议。",
+    "建议内容尽量简短、可执行；如有步骤，请用分条列表。",
+    "如果系统资源无法匹配，也要给出通用的自我调节策略建议。",
   ].join("\n");
 
   const user = `输入数据：\n${JSON.stringify(input)}`;
@@ -1307,9 +1309,74 @@ const callReportAI = async (input) => {
 
 const RELAX_RESOURCE_CATALOG = [
   { name: "放松空间总览", link: "#relax" },
-  { name: "儿童冥想 · 正念大叔", link: "#relax-meditation" },
+  { name: "儿童冥想 · 鼻子的探索", link: "#relax-meditation" },
+  { name: "睡前冥想 · 5分钟身体扫描", link: "#relax-meditation" },
+  { name: "呼吸训练 · 3分钟呼吸训练", link: "#relax-meditation" },
+  { name: "呼吸训练 · 做情绪的主人", link: "#relax-meditation" },
   { name: "脑波音乐 · 频段列表", link: "#relax-binaural" },
 ];
+
+const normalizeChatText = (text) => String(text || "").replace(/\s+/g, "");
+
+const classifyYesNo = (text) => {
+  const t = normalizeChatText(text);
+  const negPattern = /(没有|没想|没考虑|不想|从不|从来没|没有过|并没有|不会|不是)/;
+  const negMatch = negPattern.test(t);
+  const tPos = t.replace(new RegExp(negPattern.source, "g"), "");
+  const posMatch = /(有|想过|有点|经常|偶尔|有时候|是的|对|嗯|会)/.test(tPos);
+  if (posMatch) return "yes";
+  if (negMatch && !posMatch) return "no";
+  return "unknown";
+};
+
+const detectChatRiskUpdates = (messages) => {
+  if (!Array.isArray(messages) || messages.length < 2) return [];
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  if (!lastUser || !lastAssistant) return [];
+
+  const assistantText = normalizeChatText(lastAssistant.content);
+  const userText = lastUser.content || "";
+  const answer = classifyYesNo(userText);
+  if (answer === "unknown") return [];
+
+  const updates = [];
+  const asksSuicide =
+    /(自杀|不想活了|活着没意思|想消失|想结束)/.test(assistantText);
+  const asksSelfHarm = /(伤害自己|自伤)/.test(assistantText);
+
+  if (asksSelfHarm) {
+    const ideation = answer === "yes" ? 1 : 0;
+    const riskLevel = ideation ? "medium" : "low";
+    updates.push({
+      scaleId: "SELF_HARM",
+      score: { ideation, behavior: null },
+      level: {
+        summary: ideation
+          ? "对话追问中报告存在自伤相关想法"
+          : "对话追问中未报告自伤相关想法",
+      },
+      flags: { riskLevel, source: "chat_followup" },
+    });
+  }
+
+  if (asksSuicide) {
+    const ideation = answer === "yes" ? 1 : 0;
+    const riskLevel = ideation ? "medium" : "low";
+    updates.push({
+      scaleId: "SUICIDE",
+      score: { ideation, plan: null, attempt: null, attemptCount: null },
+      level: {
+        summary: ideation
+          ? "对话追问中报告存在自杀相关想法"
+          : "对话追问中未报告自杀相关想法",
+      },
+      flags: { riskLevel, source: "chat_followup" },
+    });
+  }
+
+  return updates;
+};
 
 const callStatusAI = async (input) => {
   if (!process.env.DASHSCOPE_API_KEY) return null;
@@ -1363,16 +1430,7 @@ const buildReportData = async (username) => {
   Object.keys(latestScales).forEach((scaleId) => {
     const item = latestScales[scaleId];
     const rawScore = item.data?.score || {};
-    let score = { ...rawScore };
-    if (scaleId === "ERQ") {
-      const supMean = Number(rawScore.suppression_mean);
-      if (!Number.isNaN(supMean)) {
-        score = {
-          ...score,
-          suppression_reverse_mean: Number((8 - supMean).toFixed(2)),
-        };
-      }
-    }
+    const score = { ...rawScore };
     scalesPayload[scaleId] = {
       scaleId,
       scaleName: getScaleName(scaleId),
@@ -1591,9 +1649,6 @@ const renderReportHtml = (report) => {
     if (scaleId === "ERQ") {
       extraLines.push(`认知重评分：${score.reappraisal_mean ?? "-"}`);
       extraLines.push(`表达抑制分：${score.suppression_mean ?? "-"}`);
-      if (score.suppression_reverse_mean !== undefined) {
-        extraLines.push(`表达抑制分（反向）：${score.suppression_reverse_mean}`);
-      }
     }
     if (scaleId === "SELF_HARM") {
       extraLines.push(`自伤想法频次：${score.ideation ?? "-"}`);
@@ -2269,8 +2324,10 @@ ${resourceCatalog.map((r) => `- ${r.name}：${r.link}`).join("\n")}
 # 输出要求
 1. 先用 1-2 句解释当前状态（非诊断）。
 2. 追加 1-2 个温和追问（根据风险分级）。
-3. 给出 1-3 条可执行建议。
+3. 给出 1-3 条可执行建议；如果建议较长，请分条列出步骤。
 4. 如适合，给出 1-2 条资源推荐，必须使用上面的链接。
+5. 若无可用资源，也要给出简短的自我调节策略建议。
+6. 如果内容较长，请分成“分析”与“建议”两个自然段输出。
 `;
 
     // 2) 调用 DashScope OpenAI 兼容接口

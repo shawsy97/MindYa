@@ -399,10 +399,10 @@ export const SCALE_BANK = {
       // 不做“高低好坏”的医学判断，只输出策略倾向
       let strategy = "比较均衡";
       let summary = "你对情绪的处理方式比较灵活，会在不同情境下做出调整。";
-      if (reMean - supMean >= 0.8) {
+      if (reMean > supMean) {
         strategy = "更偏向认知重评";
         summary = "你更习惯换个角度看问题，让情绪慢慢变轻。";
-      } else if (supMean - reMean >= 0.8) {
+      } else if (supMean > reMean) {
         strategy = "更偏向表达抑制";
         summary = "你更习惯把情绪先收起来，之后再慢慢消化。";
       }

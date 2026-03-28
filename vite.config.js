@@ -39,7 +39,9 @@ export default defineConfig({
       },
       workbox: {
         // SPA 友好：所有路由回退到 index.html
-        navigateFallback: '/index.html'
+        // 但排除后端 API，避免 PDF/接口被 SW 误拦截
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//]
       }
     })
   ],
