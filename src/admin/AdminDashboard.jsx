@@ -1056,6 +1056,10 @@ function UsersTab({ users, loading, onSelectUser }) {
 // ScalesTab组件 (修复总分为0的bug)
 function ScalesTab({ scales, loading, onSelectScale }) {
   if (loading) return <div className="text-center py-10 text-gray-500">加载中...</div>;
+  const [viewMode, setViewMode] = useState('flat');
+  const [query, setQuery] = useState('');
+  const [riskFilter, setRiskFilter] = useState('all');
+  const [scaleTypeFilter, setScaleTypeFilter] = useState('all');
 
   // 获取实际总分的函数
   const getActualTotalScore = (scale) => {
@@ -1112,6 +1116,112 @@ function ScalesTab({ scales, loading, onSelectScale }) {
     return 100;
   };
 
+  const riskConfig = {
+    high: {
+      bg: 'bg-red-50',
+      text: 'text-red-700',
+      border: 'border-red-100',
+      label: '高风险',
+      gradient: 'from-red-500 to-orange-500'
+    },
+    medium: {
+      bg: 'bg-yellow-50',
+      text: 'text-yellow-700',
+      border: 'border-yellow-100',
+      label: '中风险',
+      gradient: 'from-yellow-500 to-amber-500'
+    },
+    low: {
+      bg: 'bg-green-50',
+      text: 'text-green-700',
+      border: 'border-green-100',
+      label: '低风险',
+      gradient: 'from-green-500 to-emerald-500'
+    }
+  };
+
+  const normalizeScaleLabel = (scale) =>
+    scale.scaleName || scale.scaleId || '未知量表';
+
+  const scaleTypeOptions = Array.from(
+    new Set(scales.map((scale) => scale.scaleId || scale.scaleName).filter(Boolean))
+  ).sort();
+
+  const filteredScales = scales.filter((scale) => {
+    const username = String(scale.username || '');
+    const scaleLabel = String(normalizeScaleLabel(scale));
+    const scaleId = String(scale.scaleId || '');
+    const keyword = query.trim().toLowerCase();
+    if (keyword) {
+      const haystack = `${username} ${scaleLabel} ${scaleId}`.toLowerCase();
+      if (!haystack.includes(keyword)) return false;
+    }
+    if (riskFilter !== 'all' && scale.riskLevel !== riskFilter) return false;
+    if (scaleTypeFilter !== 'all') {
+      if (scale.scaleId !== scaleTypeFilter && scale.scaleName !== scaleTypeFilter) return false;
+    }
+    return true;
+  });
+
+  const renderScaleRow = (scale) => {
+    const actualTotalScore = getActualTotalScore(scale);
+    const scoreRange = getScoreRange(scale);
+    const config = riskConfig[scale.riskLevel] || riskConfig.low;
+    return (
+      <button
+        type="button"
+        key={scale._id || scale.username + scale.submittedAt}
+        onClick={() => onSelectScale?.(scale._id)}
+        className="w-full text-left bg-white rounded-xl border border-gray-100 p-4 hover:border-blue-300 hover:shadow-sm transition-all duration-200"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-semibold text-gray-900 truncate">{scale.username}</div>
+            <div className="text-xs text-gray-500 truncate">{normalizeScaleLabel(scale)}</div>
+          </div>
+          <div className={`px-2.5 py-1 rounded-full ${config.bg} ${config.text} border ${config.border} text-xs font-medium`}>
+            {config.label}
+          </div>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+            <div
+              className={`h-2 rounded-full bg-gradient-to-r ${config.gradient}`}
+              style={{
+                width: `${Math.min((actualTotalScore / scoreRange) * 100, 100)}%`
+              }}
+            ></div>
+          </div>
+          <div className="text-sm font-semibold text-gray-900 min-w-[48px] text-right">
+            {actualTotalScore}
+          </div>
+        </div>
+        <div className="mt-2 text-xs text-gray-500">
+          {new Date(scale.submittedAt).toLocaleString('zh-CN', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
+        </div>
+      </button>
+    );
+  };
+
+  const groupedByUser = filteredScales.reduce((acc, scale) => {
+    const key = scale.username || '未知用户';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(scale);
+    return acc;
+  }, {});
+
+  const groupedByScale = filteredScales.reduce((acc, scale) => {
+    const key = normalizeScaleLabel(scale);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(scale);
+    return acc;
+  }, {});
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-6">
       {/* 标题区域 */}
@@ -1127,42 +1237,71 @@ function ScalesTab({ scales, loading, onSelectScale }) {
             </div>
           </div>
           <div className="bg-gradient-to-r from-blue-500 to-cyan-500 px-4 py-2 rounded-full shadow-sm">
-            <span className="text-sm font-medium text-white">{scales.length} 条记录</span>
+            <span className="text-sm font-medium text-white">{filteredScales.length} 条记录</span>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: 'flat', label: '全部记录' },
+              { value: 'user', label: '按用户' },
+              { value: 'scale', label: '按量表' }
+            ].map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setViewMode(item.value)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                  viewMode === item.value
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索用户名/量表"
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+            <select
+              value={riskFilter}
+              onChange={(e) => setRiskFilter(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="all">全部风险</option>
+              <option value="high">高风险</option>
+              <option value="medium">中风险</option>
+              <option value="low">低风险</option>
+            </select>
+            <select
+              value={scaleTypeFilter}
+              onChange={(e) => setScaleTypeFilter(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              <option value="all">全部量表</option>
+              {scaleTypeOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
 
       {/* 量表数据列表 */}
       <div className="space-y-4">
-        {scales.length > 0 ? scales.map((scale) => {
+        {filteredScales.length > 0 && viewMode === 'flat' ? filteredScales.map((scale) => {
           // 计算实际总分
           const actualTotalScore = getActualTotalScore(scale);
           const scoreRange = getScoreRange(scale);
 
           // 确定风险等级样式
-          const riskConfig = {
-            high: {
-              bg: 'bg-red-50',
-              text: 'text-red-700',
-              border: 'border-red-100',
-              label: '高风险',
-              gradient: 'from-red-500 to-orange-500'
-            },
-            medium: {
-              bg: 'bg-yellow-50',
-              text: 'text-yellow-700',
-              border: 'border-yellow-100',
-              label: '中风险',
-              gradient: 'from-yellow-500 to-amber-500'
-            },
-            low: {
-              bg: 'bg-green-50',
-              text: 'text-green-700',
-              border: 'border-green-100',
-              label: '低风险',
-              gradient: 'from-green-500 to-emerald-500'
-            }
-          };
           const config = riskConfig[scale.riskLevel] || riskConfig.low;
 
           return (
@@ -1180,7 +1319,7 @@ function ScalesTab({ scales, loading, onSelectScale }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-gray-900 truncate">{scale.username}</h3>
-                      <p className="text-xs text-gray-500 truncate">{scale.scaleName || '未知量表'}</p>
+                      <p className="text-xs text-gray-500 truncate">{normalizeScaleLabel(scale)}</p>
                     </div>
                   </div>
                   <div className={`px-3 py-1.5 rounded-full ${config.bg} ${config.text} border ${config.border} text-xs font-medium shadow-sm`}>
@@ -1251,7 +1390,41 @@ function ScalesTab({ scales, loading, onSelectScale }) {
               </div>
             </div>
           );
-        }) : (
+        }) : null}
+
+        {filteredScales.length > 0 && viewMode === 'user' ? (
+          <div className="space-y-5">
+            {Object.entries(groupedByUser).map(([username, items]) => (
+              <div key={username} className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div className="font-semibold text-gray-900">{username}</div>
+                  <div className="text-xs text-gray-500">{items.length} 份量表</div>
+                </div>
+                <div className="p-4 grid gap-3 md:grid-cols-2">
+                  {items.map(renderScaleRow)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {filteredScales.length > 0 && viewMode === 'scale' ? (
+          <div className="space-y-5">
+            {Object.entries(groupedByScale).map(([scaleLabel, items]) => (
+              <div key={scaleLabel} className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div className="font-semibold text-gray-900">{scaleLabel}</div>
+                  <div className="text-xs text-gray-500">{items.length} 位用户</div>
+                </div>
+                <div className="p-4 grid gap-3 md:grid-cols-2">
+                  {items.map(renderScaleRow)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {filteredScales.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
             <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
               <BarChart3 className="w-10 h-10 text-gray-400" />
@@ -1265,7 +1438,7 @@ function ScalesTab({ scales, loading, onSelectScale }) {
               <span className="text-sm">等待量表提交</span>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -1274,6 +1447,9 @@ function ScalesTab({ scales, loading, onSelectScale }) {
 // TasksTab组件 (替换原来的HighRiskTab)
 function TasksTab({ tasks, loading, onSelectTask }) {
   if (loading) return <div className="text-center py-10 text-gray-500">加载中...</div>;
+  const [viewMode, setViewMode] = useState('flat');
+  const [query, setQuery] = useState('');
+  const [taskTypeFilter, setTaskTypeFilter] = useState('all');
 
   // 获取游戏性能颜色
   const getPerformanceColor = (score) => {
@@ -1282,6 +1458,73 @@ function TasksTab({ tasks, loading, onSelectTask }) {
     if (score >= 40) return { bg: 'from-orange-500 to-red-500', text: 'text-orange-700', label: '一般' };
     return { bg: 'from-red-500 to-pink-500', text: 'text-red-700', label: '需练习' };
   };
+
+  const taskTypeOptions = Array.from(
+    new Set(tasks.map((task) => task.taskId || task.taskName).filter(Boolean))
+  ).sort();
+
+  const filteredTasks = tasks.filter((task) => {
+    const username = String(task.username || '');
+    const taskLabel = String(task.taskName || task.taskId || '未知任务');
+    const taskId = String(task.taskId || '');
+    const keyword = query.trim().toLowerCase();
+    if (keyword) {
+      const haystack = `${username} ${taskLabel} ${taskId}`.toLowerCase();
+      if (!haystack.includes(keyword)) return false;
+    }
+    if (taskTypeFilter !== 'all') {
+      if (task.taskId !== taskTypeFilter && task.taskName !== taskTypeFilter) return false;
+    }
+    return true;
+  });
+
+  const renderTaskRow = (task) => {
+    const performanceScore = task.performanceScore || 0;
+    const perfConfig = getPerformanceColor(performanceScore);
+    return (
+      <button
+        type="button"
+        key={task._id || task.username + task.submittedAt}
+        onClick={() => onSelectTask?.(task._id)}
+        className="w-full text-left bg-white rounded-xl border border-gray-100 p-4 hover:border-purple-300 hover:shadow-sm transition-all duration-200"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-semibold text-gray-900 truncate">{task.username}</div>
+            <div className="text-xs text-gray-500 truncate">{task.taskName || task.taskId || '未知任务'}</div>
+          </div>
+          <div className={`px-2.5 py-1 rounded-full bg-gradient-to-r ${perfConfig.bg} text-white text-xs font-medium`}>
+            {perfConfig.label}
+          </div>
+        </div>
+        <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+          <span>综合评分 {performanceScore}/100</span>
+          <span>
+            {new Date(task.submittedAt).toLocaleString('zh-CN', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const groupedByUser = filteredTasks.reduce((acc, task) => {
+    const key = task.username || '未知用户';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(task);
+    return acc;
+  }, {});
+
+  const groupedByTask = filteredTasks.reduce((acc, task) => {
+    const key = task.taskName || task.taskId || '未知任务';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(task);
+    return acc;
+  }, {});
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-6">
@@ -1298,14 +1541,56 @@ function TasksTab({ tasks, loading, onSelectTask }) {
             </div>
           </div>
           <div className="bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-2 rounded-full shadow-sm">
-            <span className="text-sm font-medium text-white">{tasks.length} 次记录</span>
+            <span className="text-sm font-medium text-white">{filteredTasks.length} 次记录</span>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { value: 'flat', label: '全部记录' },
+              { value: 'user', label: '按用户' },
+              { value: 'task', label: '按任务' }
+            ].map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setViewMode(item.value)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                  viewMode === item.value
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索用户名/任务"
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-200"
+            />
+            <select
+              value={taskTypeFilter}
+              onChange={(e) => setTaskTypeFilter(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-200"
+            >
+              <option value="all">全部任务</option>
+              {taskTypeOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
 
       {/* 游戏记录列表 */}
       <div className="space-y-4">
-        {tasks.length > 0 ? tasks.map((task) => {
+        {filteredTasks.length > 0 && viewMode === 'flat' ? filteredTasks.map((task) => {
           const performanceScore = task.performanceScore || 0;
           const perfConfig = getPerformanceColor(performanceScore);
 
@@ -1396,7 +1681,41 @@ function TasksTab({ tasks, loading, onSelectTask }) {
               </div>
             </div>
           );
-        }) : (
+        }) : null}
+
+        {filteredTasks.length > 0 && viewMode === 'user' ? (
+          <div className="space-y-5">
+            {Object.entries(groupedByUser).map(([username, items]) => (
+              <div key={username} className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div className="font-semibold text-gray-900">{username}</div>
+                  <div className="text-xs text-gray-500">{items.length} 条记录</div>
+                </div>
+                <div className="p-4 grid gap-3 md:grid-cols-2">
+                  {items.map(renderTaskRow)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {filteredTasks.length > 0 && viewMode === 'task' ? (
+          <div className="space-y-5">
+            {Object.entries(groupedByTask).map(([taskLabel, items]) => (
+              <div key={taskLabel} className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div className="font-semibold text-gray-900">{taskLabel}</div>
+                  <div className="text-xs text-gray-500">{items.length} 位用户</div>
+                </div>
+                <div className="p-4 grid gap-3 md:grid-cols-2">
+                  {items.map(renderTaskRow)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {filteredTasks.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
             <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-6">
               <Gamepad className="w-10 h-10 text-gray-400" />
@@ -1410,17 +1729,17 @@ function TasksTab({ tasks, loading, onSelectTask }) {
               <span className="text-sm">等待游戏完成记录</span>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* 底部提示 */}
-      {tasks.length > 0 && (
+      {filteredTasks.length > 0 && (
         <div className="text-center pt-4">
           <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>共 {tasks.length} 次游戏记录 • 点击任意卡片查看详情</span>
+            <span>共 {filteredTasks.length} 次游戏记录 • 点击任意卡片查看详情</span>
           </p>
         </div>
       )}

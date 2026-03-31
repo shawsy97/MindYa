@@ -1181,17 +1181,16 @@ app.get("/api/admin/scale/:id", async (req, res) => {
 // 辅助函数：根据scaleId获取量表名称
 function getScaleName(scaleId) {
   const scaleNames = {
-    'SRSS': '学生风险筛查量表',
-    'PHQ-9': '抑郁症筛查量表',
-    'GAD-7': '广泛性焦虑量表',
-    'BDI': '贝克抑郁量表',
-    'SCL-90': '症状自评量表',
-    'SDS': '抑郁自评量表',
-    'SAS': '焦虑自评量表',
-    'ERQ': '情绪调节问卷',
-    'NET_ADDICT': '青少年上网成瘾自评量表',
-    'BULLYING_SIMPLE': '同伴相处小问答',
+    'DASS21': 'DASS-21 抑郁焦虑压力量表',
     'PHQ9_CHILD': 'PHQ-9 抑郁量表',
+    'SRSS': '睡眠量表（SRSS）',
+    'ERQ': '情绪调节（ERQ）',
+    'NET_ADDICT': '网络成瘾量表（IAT）',
+    'ANHEDONIA': '快感缺失量表',
+    'BULLYING': '霸凌主动&被动（含网络欺凌）',
+    'BULLYING_SIMPLE': '霸凌主动&被动（含网络欺凌）',
+    'ACADEMIC_BURNOUT': '学业倦怠量表',
+    'SCHOOL_AVERSION': '厌学量表',
     'SELF_HARM': '自伤问卷（非自杀性自伤筛查）',
     'SUICIDE': '自杀问卷（风险筛查）'
   };

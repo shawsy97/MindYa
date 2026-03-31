@@ -77,12 +77,12 @@ function scoreDASS21(scale, answers) {
 export const SCALE_BANK = {
   DASS21: {
     id: "DASS21",
-    name: "心情天气探索",
+    name: "DASS-21 抑郁焦虑压力量表",
     period: "过去一周",
     type: "likert",
     ageRange: { min: 12, max: 18 },
     intro: {
-      title: "心情天气探索",
+      title: "DASS-21 抑郁焦虑压力量表",
       prompt: "最近一周的情绪更像什么天气？没有对错，只选最接近你的感受。",
       paragraphs: [
         "请仔细阅读以下每个条目，并根据过去一周的情况，在每个条目中选择适用于你情况的程度选项。",
@@ -180,12 +180,12 @@ export const SCALE_BANK = {
   },
   SRSS: {
     id: "SRSS",
-    name: "夜晚恢复力",
+    name: "睡眠量表（SRSS）",
     period: "近 1 个月内",
     type: "likert",
     ageRange: { min: 12, max: 18 },
     intro: {
-      title: "夜晚恢复力",
+      title: "睡眠量表（SRSS）",
       prompt: "最近的睡眠怎么样？入睡、醒来、精力恢复情况如何？",
       paragraphs: [
         "以下问题是了解你睡眠情况的，请在最符合自己的每个问题上选择一个答案（√）。",
@@ -346,12 +346,12 @@ export const SCALE_BANK = {
   },
   ERQ: {
     id: "ERQ",
-    name: "我的情绪背包",
+    name: "情绪调节（ERQ）",
     period: "一般情况",
     type: "likert",
     ageRange: { min: 12, max: 18 },
     intro: {
-      title: "我的情绪背包",
+      title: "情绪调节（ERQ）",
       prompt: "当不开心或生气时，你通常会怎么做？每个人都有不同的方式。",
       paragraphs: [
         "在这一部分，我们将有一些关于你的情绪生活的问题要问你，尤其是你如何控制（这指的是调节与管理）你的情绪。",
@@ -427,12 +427,12 @@ export const SCALE_BANK = {
   },
   NET_ADDICT: {
     id: "NET_ADDICT",
-    name: "网络使用小调查",
+    name: "网络成瘾量表（IAT）",
     period: "最近一段时间",
     type: "likert",
     ageRange: { min: 12, max: 18 },
     intro: {
-      title: "网络使用小调查",
+      title: "网络成瘾量表（IAT）",
       prompt: "这是一份关于上网习惯的小测试，请根据你的真实感受选择。",
       paragraphs: [
         "没有对错之分，只需要选择最接近你最近情况的答案。",
@@ -689,12 +689,12 @@ export const SCALE_BANK = {
   },
   ACADEMIC_BURNOUT: {
     id: "ACADEMIC_BURNOUT",
-    name: "学习能量值",
+    name: "学业倦怠量表",
     period: "近期（按问卷：最近/最近一段时间）",
     type: "likert",
     ageRange: { min: 12, max: 18 },
     intro: {
-      title: "学习能量值",
+      title: "学业倦怠量表",
       prompt: "最近学习时的感觉如何？是充满动力，还是有点累？",
       paragraphs: [
         "此部分是你对自己学习状况的描述，请在符合自己实际情况的选项上划“√”，每题只选择一个答案，请不要多选或漏选。",
@@ -764,12 +764,12 @@ export const SCALE_BANK = {
   },
   SCHOOL_AVERSION: {
     id: "SCHOOL_AVERSION",
-    name: "上学状态小调查",
+    name: "厌学量表",
     period: "近期（按问卷：你的实际情况）",
     type: "likert",
     ageRange: { min: 12, max: 18 },
     intro: {
-      title: "上学状态小调查",
+      title: "厌学量表",
       prompt: "最近想到上学时的感受如何？轻松、平常，还是有点抗拒？",
       paragraphs: [
         "请根据你的实际情况，对下列各题选择合适的选项划“√”。",
@@ -834,14 +834,14 @@ export const SCALE_BANK = {
   },
   ANHEDONIA: {
     id: "ANHEDONIA",
-    name: "开心感小调查",
+    name: "快感缺失量表",
     period: "过去两星期",
     type: "likert",
     ageRange: { min: 12, max: 18 },
 
     // ⭐ 建议有说明页（和自伤/自杀一样严谨）
     intro: {
-      title: "开心感小调查",
+      title: "快感缺失量表",
       prompt: "最近做一些事情时，还能感受到开心或兴趣吗？一起看看最近的状态。",
       paragraphs: [
         "本问卷旨在了解你在过去两星期内，对生活中有趣、愉快事情的感受程度。",
@@ -936,13 +936,13 @@ export const SCALE_BANK = {
   },
   BULLYING: {
     id: "BULLYING",
-    name: "校园相处感受",
+    name: "霸凌主动&被动（含网络欺凌）",
     period: "过去的一年",
     type: "likert",
     ageRange: { min: 10, max: 18 },
 
     intro: {
-      title: "校园相处感受",
+      title: "霸凌主动&被动（含网络欺凌）",
       prompt: "和同学相处时，你的感受如何？自在，还是有些不舒服？",
       paragraphs: [
         "本问卷旨在了解你在过去一年中，是否经历过或参与过不同形式的欺凌行为。",
@@ -1033,12 +1033,12 @@ export const SCALE_BANK = {
   },
   BULLYING_SIMPLE: {
     id: "BULLYING_SIMPLE",
-    name: "同伴相处小问答",
+    name: "霸凌主动&被动（含网络欺凌）",
     period: "过去 12 个月",
     type: "likert",
     ageRange: { min: 8, max: 9 },
     intro: {
-      title: "同伴相处小问答",
+      title: "霸凌主动&被动（含网络欺凌）",
       prompt: "下面的问题没有对错，只要选最接近你的情况。",
       paragraphs: [
         "如果发生过类似情况，请选对应的频次。",

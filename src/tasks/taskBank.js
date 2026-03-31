@@ -688,14 +688,14 @@ export const TASK_BANK = {
   CPT_X: {
     id: "CPT_X",
     name: "专注小挑战",
-    durationHint: "约 3 分钟",
+    durationHint: "约 2 分钟",
     instructions: [
       "屏幕会连续出现字母。",
       "看到“X”时，请尽快按下按钮或空格键。",
       "看到其他字母时不要按。",
       "尽量又快又准。",
     ],
-    config: { nTrials: 180, targetProb: 0.2, stimMs: 500, isiMs: 500 },
+    config: { nTrials: 100, targetProb: 0.2, stimMs: 500, isiMs: 500 },
     init: (config) => {
       const trials = makeCPT_X_Trials(config);
       return { trials };
@@ -706,7 +706,7 @@ export const TASK_BANK = {
   SST: {
     id: "SST",
     name: "快停反应赛",
-    durationHint: "约 4 分钟",
+    durationHint: "约 2 分钟",
     instructions: [
       "看到 ← 按左边，看到 → 按右边。",
       "有时候会突然出现“停！”，这时要立刻忍住，不要按。",
@@ -716,7 +716,7 @@ export const TASK_BANK = {
     config: {
       practiceTrials: 12,
       practiceStopProb: 0.25,
-      nTrials: 160,
+      nTrials: 80,
       stopProb: 0.25,
       stimMs: 1500,
       isiMs: 700,
@@ -741,7 +741,7 @@ export const TASK_BANK = {
   STROOP: {
     id: "STROOP",
     name: "颜色大作战",
-    durationHint: "约 3–4 分钟",
+    durationHint: "约 2 分钟",
     instructions: [
       "看清楚字是用什么颜色写的。",
       "不要读这个字的意思，只要判断颜色。",
@@ -750,7 +750,7 @@ export const TASK_BANK = {
     ],
     config: {
       practiceTrials: 6,
-      nTrialsPerCond: 24, // 共 72 个正式试次
+      nTrialsPerCond: 12, // 共 72 / 2个正式试次
       stimMs: 2000,
       isiMs: 800,
     },
@@ -764,7 +764,7 @@ export const TASK_BANK = {
   WCST: {
     id: "WCST",
     name: "卡片找规律",
-    durationHint: "约 4–6 分钟",
+    durationHint: "约 2分钟",
     instructions: [
       "看一看下面的卡片应该配到上面的哪一张。",
       "不用猜提示，系统只会告诉你对不对。",
@@ -787,7 +787,7 @@ export const TASK_BANK = {
   NBACK: {
     id: "NBACK",
     name: "记忆小侦探",
-    durationHint: "约 3–4 分钟",
+    durationHint: "约 2 分钟",
     instructions: [
       "看看现在的字母，是不是和前面第 N 个一样。",
       "一样就点一下，不一样就等下一个。",
@@ -797,7 +797,7 @@ export const TASK_BANK = {
     config: {
       n: 2,
       practiceTrials: 12,
-      nTrials: 60,
+      nTrials: 30,
       targetRate: 0.25,
       stimMs: 1200,
       isiMs: 800,

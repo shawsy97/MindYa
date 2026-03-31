@@ -142,14 +142,14 @@ export default function UserReport({ user, onBack }) {
   };
 
   const scaleMeta = {
-    DASS21: { name: 'DASS21', abbr: 'DASS-21', threshold: '分级：抑郁 0–9/10–13/14–20/21–27/≥28；焦虑 0–7/8–9/10–14/15–19/≥20；压力 0–14/15–18/19–25/26–33/≥34' },
-    ANHEDONIA: { name: '快感缺失', abbr: 'Anhedonia', threshold: '当前仅做描述性展示' },
+    DASS21: { name: 'DASS-21 抑郁焦虑压力量表', abbr: 'DASS-21', threshold: '分级：抑郁 0–9/10–13/14–20/21–27/≥28；焦虑 0–7/8–9/10–14/15–19/≥20；压力 0–14/15–18/19–25/26–33/≥34' },
+    ANHEDONIA: { name: '快感缺失量表', abbr: 'Anhedonia', threshold: '当前仅做描述性展示' },
     ERQ: { name: '情绪调节（ERQ）', abbr: 'ERQ', threshold: '当前仅做描述性展示' },
     PHQ9_CHILD: { name: 'PHQ-9 抑郁量表', abbr: 'PHQ-9', threshold: '0–4 无/极轻；5–9 轻度；10–14 中度；15–19 中重度；20–27 重度；第9题需单独关注' },
     SELF_HARM: { name: '自伤问卷（非自杀性自伤筛查）', abbr: 'NSSI', threshold: '任一题 ≥1 视为风险信号' },
     SUICIDE: { name: '自杀问卷（风险筛查）', abbr: 'Suicide Screen', threshold: '任一题=有 视为风险信号' },
-    NET_ADDICT: { name: '网络成瘾', abbr: 'IAT', threshold: '总分>45 达到筛查阈值' },
-    ACADEMIC_BURNOUT: { name: '学业倦怠', abbr: 'Academic Burnout', threshold: '当前仅做描述性展示' },
+    NET_ADDICT: { name: '网络成瘾量表（IAT）', abbr: 'IAT', threshold: '总分>45 达到筛查阈值' },
+    ACADEMIC_BURNOUT: { name: '学业倦怠量表', abbr: 'Academic Burnout', threshold: '当前仅做描述性展示' },
     SCHOOL_AVERSION: { name: '厌学量表', abbr: 'School Aversion', threshold: '均分≥3 轻度；≥4 重度' },
     BULLYING: { name: '霸凌主动&被动（含网络欺凌）', abbr: 'Bullying', threshold: '出现任一维度高频提示需关注' },
     BULLYING_SIMPLE: { name: '霸凌主动&被动（含网络欺凌）', abbr: 'Bullying-4', threshold: '任一题≥2 视为卷入；分类：受害/施暴/双方' },
