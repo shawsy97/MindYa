@@ -506,12 +506,27 @@ const getD1UserIdByUsername = async (username) => {
   return result?.results?.[0]?.id || null;
 };
 
+const isNewerThan = (candidate, existing) => {
+  if (!candidate) return false;
+  if (!existing) return true;
+  const cTime = new Date(candidate).getTime();
+  const eTime = new Date(existing).getTime();
+  if (Number.isNaN(cTime)) return false;
+  if (Number.isNaN(eTime)) return true;
+  return cTime > eTime;
+};
+
 const syncLocalResultsToD1 = async () => {
-  if (!D1_ENABLED) return;
+  if (!D1_ENABLED) return { total: 0, inserted: 0, skipped: 0 };
   const rows = readResultsJsonl();
-  if (!rows.length) return;
+  if (!rows.length) return { total: 0, inserted: 0, skipped: 0 };
+  let inserted = 0;
+  let skipped = 0;
   for (const row of rows) {
-    if (!row?.id || !row?.username || !row?.type) continue;
+    if (!row?.id || !row?.username || !row?.type) {
+      skipped += 1;
+      continue;
+    }
     const payload = typeof row.data === "string" ? row.data : JSON.stringify(row.data ?? {});
     const createdAt = row.createdAt || new Date().toISOString();
     try {
@@ -519,45 +534,76 @@ const syncLocalResultsToD1 = async () => {
         "INSERT OR IGNORE INTO results (id, username, type, data, created_at) VALUES (?, ?, ?, ?, ?)",
         [row.id, row.username, row.type, payload, createdAt]
       );
+      inserted += 1;
     } catch (error) {
       console.warn("Sync result to D1 failed:", error.message);
+      skipped += 1;
     }
   }
+  return { total: rows.length, inserted, skipped };
 };
 
 const syncLocalUsersToD1 = async () => {
-  if (!D1_ENABLED) return;
+  if (!D1_ENABLED) return { total: 0, inserted: 0, updated: 0, skipped: 0 };
   const users = readUsers();
-  if (!users.length) return;
+  if (!users.length) return { total: 0, inserted: 0, updated: 0, skipped: 0 };
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
   for (const user of users) {
-    if (!user?.username) continue;
+    if (!user?.username) {
+      skipped += 1;
+      continue;
+    }
     const now = new Date().toISOString();
-    const existing = await d1Query("SELECT id FROM users WHERE username = ? LIMIT 1", [user.username]);
+    const existing = await d1Query("SELECT id, updated_at FROM users WHERE username = ? LIMIT 1", [user.username]);
     const row = existing?.results?.[0];
+    const localUpdatedAt = user.updatedAt || user.createdAt || now;
     if (row?.id) {
+      if (!isNewerThan(localUpdatedAt, row.updated_at)) {
+        skipped += 1;
+        continue;
+      }
       await d1Exec(
         "UPDATE users SET password_hash = ?, status = ?, updated_at = ? WHERE id = ?",
-        [user.password || user.password_hash || "", user.status || "active", now, row.id]
+        [user.password || user.password_hash || "", user.status || "active", localUpdatedAt, row.id]
       );
+      updated += 1;
     } else {
       const id = user.id || crypto.randomUUID();
       await d1Exec(
         "INSERT INTO users (id, username, email, password_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [id, user.username, user.email || "", user.password || user.password_hash || "", user.status || "active", user.createdAt || now, user.updatedAt || now]
+        [id, user.username, user.email || "", user.password || user.password_hash || "", user.status || "active", user.createdAt || now, localUpdatedAt]
       );
+      inserted += 1;
     }
   }
+  return { total: users.length, inserted, updated, skipped };
 };
 
 const syncLocalProfilesToD1 = async () => {
-  if (!D1_ENABLED || !fs.existsSync(profilesPath)) return;
+  if (!D1_ENABLED || !fs.existsSync(profilesPath)) {
+    return { total: 0, inserted: 0, updated: 0, skipped: 0 };
+  }
   const { rows } = parseCsv(fs.readFileSync(profilesPath, "utf-8"));
+  if (!rows.length) return { total: 0, inserted: 0, updated: 0, skipped: 0 };
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
   for (const row of rows) {
-    if (!row?.username) continue;
+    if (!row?.username) {
+      skipped += 1;
+      continue;
+    }
     const now = new Date().toISOString();
-    const existing = await d1Query("SELECT id FROM profiles WHERE username = ? LIMIT 1", [row.username]);
+    const existing = await d1Query("SELECT id, updated_at FROM profiles WHERE username = ? LIMIT 1", [row.username]);
     const profileRow = existing?.results?.[0];
+    const localUpdatedAt = row.updatedAt || row.createdAt || now;
     if (profileRow?.id) {
+      if (!isNewerThan(localUpdatedAt, profileRow.updated_at)) {
+        skipped += 1;
+        continue;
+      }
       await d1Exec(
         "UPDATE profiles SET gender = ?, age = ?, grade = ?, scale_result = ?, model_result = ?, game_result = ?, updated_at = ? WHERE id = ?",
         [
@@ -567,10 +613,11 @@ const syncLocalProfilesToD1 = async () => {
           row.scaleResult || "",
           row.modelResult || "",
           row.gameResult || "",
-          row.updatedAt || now,
+          localUpdatedAt,
           profileRow.id,
         ]
       );
+      updated += 1;
     } else {
       const id = crypto.randomUUID();
       const userId = await getD1UserIdByUsername(row.username);
@@ -587,17 +634,21 @@ const syncLocalProfilesToD1 = async () => {
           row.modelResult || "",
           row.gameResult || "",
           row.createdAt || now,
-          row.updatedAt || now,
+          localUpdatedAt,
         ]
       );
+      inserted += 1;
     }
   }
+  return { total: rows.length, inserted, updated, skipped };
 };
 
 const syncLocalConversationsToD1 = async () => {
-  if (!D1_ENABLED) return;
+  if (!D1_ENABLED) return { conversations: 0, messages: 0 };
   const conversationsData = readConversations();
   const entries = Object.entries(conversationsData || {});
+  let conversations = 0;
+  let messagesCount = 0;
   for (const [username, convs] of entries) {
     if (!Array.isArray(convs)) continue;
     const userId = await getD1UserIdByUsername(username);
@@ -617,6 +668,7 @@ const syncLocalConversationsToD1 = async () => {
           updatedAt,
         ]
       );
+      conversations += 1;
       const messages = Array.isArray(conv.messages) ? conv.messages : [];
       for (let i = 0; i < messages.length; i += 1) {
         const msg = messages[i] || {};
@@ -632,9 +684,11 @@ const syncLocalConversationsToD1 = async () => {
           "INSERT OR REPLACE INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
           [msgId, conv.id, role, msg.text || "", msgCreatedAt]
         );
+        messagesCount += 1;
       }
     }
   }
+  return { conversations, messages: messagesCount };
 };
 
 const scheduleDailyResultsSync = () => {
@@ -649,6 +703,7 @@ const scheduleDailyResultsSync = () => {
       .then(syncLocalProfilesToD1)
       .then(syncLocalResultsToD1)
       .then(syncLocalConversationsToD1)
+      .then(archiveAndClearResultsFile)
       .catch((err) => {
         console.error("Daily results sync failed:", err);
       });
@@ -658,11 +713,32 @@ const scheduleDailyResultsSync = () => {
         .then(syncLocalProfilesToD1)
         .then(syncLocalResultsToD1)
         .then(syncLocalConversationsToD1)
+        .then(archiveAndClearResultsFile)
         .catch((err) => {
           console.error("Daily results sync failed:", err);
         });
     }, 24 * 60 * 60 * 1000);
   }, delay);
+};
+
+const archiveAndClearResultsFile = async () => {
+  ensureDataFiles();
+  if (!fs.existsSync(resultsJsonlPath)) return;
+  const raw = fs.readFileSync(resultsJsonlPath, "utf-8");
+  if (!raw.trim()) return;
+
+  const date = new Date().toISOString().split("T")[0];
+  const archiveDir = path.join(dataDir, "archive");
+  if (!fs.existsSync(archiveDir)) {
+    fs.mkdirSync(archiveDir, { recursive: true });
+  }
+  let target = path.join(archiveDir, `results-${date}.jsonl`);
+  if (fs.existsSync(target)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    target = path.join(archiveDir, `results-${date}-${stamp}.jsonl`);
+  }
+  fs.renameSync(resultsJsonlPath, target);
+  fs.writeFileSync(resultsJsonlPath, "", "utf-8");
 };
 
 const exportD1ToLocalFiles = async () => {
@@ -2709,6 +2785,28 @@ app.post("/api/admin/d1/export", async (req, res) => {
     return res.json({ ok: true, ...stats });
   } catch (error) {
     console.error("Export D1 to files error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/admin/d1/sync-now", async (req, res) => {
+  try {
+    const startedAt = Date.now();
+    const users = await syncLocalUsersToD1();
+    const profiles = await syncLocalProfilesToD1();
+    const results = await syncLocalResultsToD1();
+    const conversations = await syncLocalConversationsToD1();
+    const finishedAt = Date.now();
+    return res.json({
+      ok: true,
+      durationMs: finishedAt - startedAt,
+      users,
+      profiles,
+      results,
+      conversations,
+    });
+  } catch (error) {
+    console.error("Sync local files to D1 error:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
