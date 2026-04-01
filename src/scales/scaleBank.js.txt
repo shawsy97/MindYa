@@ -1,5 +1,5 @@
 // src/scales/scaleBank.js
-
+//保存一下修正小朋友量表名字的scaleBank.js
 const OPTIONS_0_3 = [
   { label: "完全不符合", value: 0 },
   { label: "有时符合", value: 1 },

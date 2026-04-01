@@ -43,7 +43,9 @@ app.use(express.json({ limit: "1mb" }));
 const dataDir = path.join(__dirname, "usr");
 const usersPath = path.join(dataDir, "users.json");
 const profilesPath = path.join(dataDir, "profiles.csv");
+const profilesJsonPath = path.join(dataDir, "profiles.json");
 const resultsPath = path.join(dataDir, "results.csv");
+const resultsJsonlPath = path.join(dataDir, "results.jsonl");
 const logsPath = path.join(dataDir, "logs.csv");
 const systemLogPath = path.join(dataDir, "system_logs.jsonl");
 const conversationsPath = path.join(dataDir, "conversations.json");
@@ -168,8 +170,14 @@ const ensureDataFiles = () => {
       "utf-8"
     );
   }
+  if (!fs.existsSync(profilesJsonPath)) {
+    fs.writeFileSync(profilesJsonPath, "[]", "utf-8");
+  }
   if (!fs.existsSync(resultsPath)) {
     fs.writeFileSync(resultsPath, "username,type,data,createdAt\n", "utf-8");
+  }
+  if (!fs.existsSync(resultsJsonlPath)) {
+    fs.writeFileSync(resultsJsonlPath, "", "utf-8");
   }
   if (!fs.existsSync(logsPath)) {
     fs.writeFileSync(logsPath, "username,action,detail,createdAt\n", "utf-8");
@@ -216,12 +224,14 @@ const writeUsers = (users) => {
 
 const getUserByUsername = async (username) => {
   if (!username) return null;
+  const users = readUsers();
+  const local = users.find((u) => u.username === username);
+  if (local) return local;
   if (D1_ENABLED) {
     const result = await d1Query("SELECT * FROM users WHERE username = ? LIMIT 1", [username]);
     return result?.results?.[0] || null;
   }
-  const users = readUsers();
-  return users.find((u) => u.username === username) || null;
+  return null;
 };
 
 const userExists = async (username) => {
@@ -231,28 +241,49 @@ const userExists = async (username) => {
 
 const createUser = async ({ username, password }) => {
   const now = new Date().toISOString();
-  if (D1_ENABLED) {
-    const userId = crypto.randomUUID();
-    await d1Exec(
-      "INSERT INTO users (id, username, email, password_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [userId, username, "", password, "active", now, now]
-    );
-    const profileId = crypto.randomUUID();
-    await d1Exec(
-      "INSERT INTO profiles (id, user_id, username, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      [profileId, userId, username, now, now]
-    );
-    return { id: userId, username };
-  }
+  const userId = crypto.randomUUID();
   const users = readUsers();
   users.push({
+    id: userId,
     username,
     password,
     role: "student",
     createdAt: now,
+    updatedAt: now,
   });
   writeUsers(users);
-  return { username };
+
+  if (fs.existsSync(profilesPath)) {
+    const { rows } = parseCsv(fs.readFileSync(profilesPath, "utf-8"));
+    const exists = rows.find((row) => row.username === username);
+    if (!exists) {
+      rows.push({
+        username,
+        gender: "",
+        age: "",
+        grade: "",
+        scaleResult: "",
+        modelResult: "",
+        gameResult: "",
+        createdAt: now,
+        updatedAt: now,
+      });
+      const header = [
+        "username",
+        "gender",
+        "age",
+        "grade",
+        "scaleResult",
+        "modelResult",
+        "gameResult",
+        "createdAt",
+        "updatedAt",
+      ];
+      writeCsv(header, rows, profilesPath);
+    }
+  }
+
+  return { id: userId, username };
 };
 
 const readReportsIndex = async () => {
@@ -410,6 +441,345 @@ const csvEscape = (value) => {
   return str;
 };
 
+const shouldUseFileForResult = (type) => type === "scale" || type === "task";
+
+const readResultsJsonl = () => {
+  ensureDataFiles();
+  if (!fs.existsSync(resultsJsonlPath)) return [];
+  const raw = fs.readFileSync(resultsJsonlPath, "utf-8");
+  if (!raw.trim()) return [];
+  const rows = [];
+  raw.split("\n").forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && parsed.username && parsed.type) {
+        rows.push(parsed);
+      }
+    } catch {
+      // skip malformed lines
+    }
+  });
+  return rows;
+};
+
+const readLocalResults = () => {
+  const jsonlResults = readResultsJsonl();
+  const csvResults = fs.existsSync(resultsPath)
+    ? parseCsv(fs.readFileSync(resultsPath, "utf-8")).rows.map((row, idx) => ({
+        id: `csv-${idx + 1}`,
+        username: row.username,
+        type: row.type,
+        data: row.data,
+        createdAt: row.createdAt,
+      }))
+    : [];
+  return [...jsonlResults, ...csvResults];
+};
+
+const getLocalResultsByType = (type) =>
+  readLocalResults().filter((row) => row.type === type);
+
+const getLocalResultById = (id, type) => {
+  const rows = getLocalResultsByType(type);
+  return rows.find((row) => String(row.id) === String(id)) || null;
+};
+
+const appendResultToFile = ({ id, username, type, data, createdAt }) => {
+  ensureDataFiles();
+  const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
+  const row = JSON.stringify({
+    id,
+    username,
+    type,
+    data: payload,
+    createdAt,
+  });
+  console.log("写入文件了吗")
+  fs.appendFileSync(resultsJsonlPath, `${row}\n`, "utf-8");
+};
+
+const getD1UserIdByUsername = async (username) => {
+  if (!D1_ENABLED || !username) return null;
+  const result = await d1Query("SELECT id FROM users WHERE username = ? LIMIT 1", [username]);
+  return result?.results?.[0]?.id || null;
+};
+
+const syncLocalResultsToD1 = async () => {
+  if (!D1_ENABLED) return;
+  const rows = readResultsJsonl();
+  if (!rows.length) return;
+  for (const row of rows) {
+    if (!row?.id || !row?.username || !row?.type) continue;
+    const payload = typeof row.data === "string" ? row.data : JSON.stringify(row.data ?? {});
+    const createdAt = row.createdAt || new Date().toISOString();
+    try {
+      await d1Exec(
+        "INSERT OR IGNORE INTO results (id, username, type, data, created_at) VALUES (?, ?, ?, ?, ?)",
+        [row.id, row.username, row.type, payload, createdAt]
+      );
+    } catch (error) {
+      console.warn("Sync result to D1 failed:", error.message);
+    }
+  }
+};
+
+const syncLocalUsersToD1 = async () => {
+  if (!D1_ENABLED) return;
+  const users = readUsers();
+  if (!users.length) return;
+  for (const user of users) {
+    if (!user?.username) continue;
+    const now = new Date().toISOString();
+    const existing = await d1Query("SELECT id FROM users WHERE username = ? LIMIT 1", [user.username]);
+    const row = existing?.results?.[0];
+    if (row?.id) {
+      await d1Exec(
+        "UPDATE users SET password_hash = ?, status = ?, updated_at = ? WHERE id = ?",
+        [user.password || user.password_hash || "", user.status || "active", now, row.id]
+      );
+    } else {
+      const id = user.id || crypto.randomUUID();
+      await d1Exec(
+        "INSERT INTO users (id, username, email, password_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id, user.username, user.email || "", user.password || user.password_hash || "", user.status || "active", user.createdAt || now, user.updatedAt || now]
+      );
+    }
+  }
+};
+
+const syncLocalProfilesToD1 = async () => {
+  if (!D1_ENABLED || !fs.existsSync(profilesPath)) return;
+  const { rows } = parseCsv(fs.readFileSync(profilesPath, "utf-8"));
+  for (const row of rows) {
+    if (!row?.username) continue;
+    const now = new Date().toISOString();
+    const existing = await d1Query("SELECT id FROM profiles WHERE username = ? LIMIT 1", [row.username]);
+    const profileRow = existing?.results?.[0];
+    if (profileRow?.id) {
+      await d1Exec(
+        "UPDATE profiles SET gender = ?, age = ?, grade = ?, scale_result = ?, model_result = ?, game_result = ?, updated_at = ? WHERE id = ?",
+        [
+          row.gender || "",
+          row.age || "",
+          row.grade || "",
+          row.scaleResult || "",
+          row.modelResult || "",
+          row.gameResult || "",
+          row.updatedAt || now,
+          profileRow.id,
+        ]
+      );
+    } else {
+      const id = crypto.randomUUID();
+      const userId = await getD1UserIdByUsername(row.username);
+      await d1Exec(
+        "INSERT INTO profiles (id, user_id, username, gender, age, grade, scale_result, model_result, game_result, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          id,
+          userId,
+          row.username,
+          row.gender || "",
+          row.age || "",
+          row.grade || "",
+          row.scaleResult || "",
+          row.modelResult || "",
+          row.gameResult || "",
+          row.createdAt || now,
+          row.updatedAt || now,
+        ]
+      );
+    }
+  }
+};
+
+const syncLocalConversationsToD1 = async () => {
+  if (!D1_ENABLED) return;
+  const conversationsData = readConversations();
+  const entries = Object.entries(conversationsData || {});
+  for (const [username, convs] of entries) {
+    if (!Array.isArray(convs)) continue;
+    const userId = await getD1UserIdByUsername(username);
+    for (const conv of convs) {
+      if (!conv?.id) continue;
+      const createdAt = conv.createdAt || conv.updatedAt || new Date().toISOString();
+      const updatedAt = conv.updatedAt || createdAt;
+      await d1Exec(
+        "INSERT OR REPLACE INTO conversations (id, user_id, username, title, preview, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+          conv.id,
+          userId,
+          username,
+          conv.title || conv.preview || "",
+          conv.preview || "",
+          createdAt,
+          updatedAt,
+        ]
+      );
+      const messages = Array.isArray(conv.messages) ? conv.messages : [];
+      for (let i = 0; i < messages.length; i += 1) {
+        const msg = messages[i] || {};
+        const msgId = msg.id
+          ? String(msg.id)
+          : crypto
+              .createHash("sha1")
+              .update(`${conv.id}:${i}:${msg.createdAt || updatedAt}:${msg.text || ""}`)
+              .digest("hex");
+        const role = msg.sender === "ai" ? "assistant" : "user";
+        const msgCreatedAt = msg.createdAt || updatedAt;
+        await d1Exec(
+          "INSERT OR REPLACE INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+          [msgId, conv.id, role, msg.text || "", msgCreatedAt]
+        );
+      }
+    }
+  }
+};
+
+const scheduleDailyResultsSync = () => {
+  if (!D1_ENABLED) return;
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 0);
+  const delay = next.getTime() - now.getTime();
+  setTimeout(() => {
+    Promise.resolve()
+      .then(syncLocalUsersToD1)
+      .then(syncLocalProfilesToD1)
+      .then(syncLocalResultsToD1)
+      .then(syncLocalConversationsToD1)
+      .catch((err) => {
+        console.error("Daily results sync failed:", err);
+      });
+    setInterval(() => {
+      Promise.resolve()
+        .then(syncLocalUsersToD1)
+        .then(syncLocalProfilesToD1)
+        .then(syncLocalResultsToD1)
+        .then(syncLocalConversationsToD1)
+        .catch((err) => {
+          console.error("Daily results sync failed:", err);
+        });
+    }, 24 * 60 * 60 * 1000);
+  }, delay);
+};
+
+const exportD1ToLocalFiles = async () => {
+  if (!D1_ENABLED) throw new Error("D1 not configured");
+  ensureDataFiles();
+
+  const usersResult = await d1Query("SELECT * FROM users", []);
+  const profilesResult = await d1Query("SELECT * FROM profiles", []);
+  const resultsResult = await d1Query("SELECT id, username, type, data, created_at FROM results", []);
+  const conversationsResult = await d1Query(
+    "SELECT * FROM conversations ORDER BY updated_at DESC",
+    []
+  );
+
+  const users = (usersResult?.results || []).map((row) => ({
+    id: row.id,
+    username: row.username,
+    email: row.email || "",
+    password: row.password_hash || "",
+    status: row.status || "active",
+    createdAt: row.created_at || "",
+    updatedAt: row.updated_at || "",
+  }));
+  fs.writeFileSync(usersPath, JSON.stringify(users, null, 2), "utf-8");
+
+  const profileRows = (profilesResult?.results || []).map((row) => ({
+    id: row.id,
+    userId: row.user_id || "",
+    username: row.username || "",
+    nickname: row.nickname || "",
+    avatarUrl: row.avatar_url || "",
+    bio: row.bio || "",
+    gender: row.gender || "",
+    birthday: row.birthday || "",
+    age: row.age || "",
+    grade: row.grade || "",
+    scaleResult: row.scale_result || "",
+    modelResult: row.model_result || "",
+    gameResult: row.game_result || "",
+    createdAt: row.created_at || "",
+    updatedAt: row.updated_at || "",
+  }));
+  fs.writeFileSync(profilesJsonPath, JSON.stringify(profileRows, null, 2), "utf-8");
+  const profileHeader = [
+    "username",
+    "gender",
+    "age",
+    "grade",
+    "scaleResult",
+    "modelResult",
+    "gameResult",
+    "createdAt",
+    "updatedAt",
+  ];
+  const profileCsvRows = profileRows.map((row) => ({
+    username: row.username,
+    gender: row.gender,
+    age: row.age,
+    grade: row.grade,
+    scaleResult: row.scaleResult,
+    modelResult: row.modelResult,
+    gameResult: row.gameResult,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+  writeCsv(profileHeader, profileCsvRows, profilesPath);
+
+  const resultsLines = (resultsResult?.results || []).map((row) =>
+    JSON.stringify({
+      id: row.id,
+      username: row.username,
+      type: row.type,
+      data: row.data,
+      createdAt: row.created_at,
+    })
+  );
+  fs.writeFileSync(
+    resultsJsonlPath,
+    `${resultsLines.join("\n")}${resultsLines.length ? "\n" : ""}`,
+    "utf-8"
+  );
+
+  const conversations = conversationsResult?.results || [];
+  const conversationsPayload = {};
+  for (const conv of conversations) {
+    const msgResult = await d1Query(
+      "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
+      [conv.id]
+    );
+    const msgs = (msgResult?.results || []).map((m) => ({
+      id: m.id,
+      text: m.content,
+      sender: m.role === "assistant" ? "ai" : "user",
+      createdAt: m.created_at || "",
+    }));
+    const record = {
+      id: conv.id,
+      title: conv.title || "",
+      preview: conv.preview || "",
+      createdAt: conv.created_at || "",
+      updatedAt: conv.updated_at || "",
+      messages: msgs,
+    };
+    const username = conv.username || "unknown";
+    if (!conversationsPayload[username]) conversationsPayload[username] = [];
+    conversationsPayload[username].push(record);
+  }
+  fs.writeFileSync(conversationsPath, JSON.stringify(conversationsPayload, null, 2), "utf-8");
+
+  return {
+    users: users.length,
+    profiles: profileRows.length,
+    results: resultsLines.length,
+    conversations: conversations.length,
+  };
+};
+
 const parseCsvLine = (line) => {
   const result = [];
   let current = "";
@@ -485,78 +855,40 @@ const safeParseJson = (raw) => {
 
 const getProfileByUsername = async (username) => {
   if (!username) return null;
+  ensureDataFiles();
+  const content = fs.readFileSync(profilesPath, "utf-8");
+  const profiles = parseCsv(content);
+  const local = profiles.rows.find((row) => row.username === username) || null;
+  if (local) return local;
   if (D1_ENABLED) {
     const result = await d1Query("SELECT * FROM profiles WHERE username = ? LIMIT 1", [username]);
     return result?.results?.[0] || null;
   }
-  ensureDataFiles();
-  const content = fs.readFileSync(profilesPath, "utf-8");
-  const profiles = parseCsv(content);
-  return profiles.rows.find((row) => row.username === username) || null;
+  return null;
 };
 
 const getScaleResultsByUsername = async (username) => {
-  if (D1_ENABLED) {
-    const result = await d1Query(
-      "SELECT username, type, data, created_at FROM results WHERE username = ? AND type = 'scale' ORDER BY created_at ASC",
-      [username]
-    );
-    return (result?.results || []).map((row) => ({
+  const localResults = readLocalResults();
+  return localResults
+    .filter((row) => row.type === "scale" && row.username === username)
+    .map((row) => ({
       username: row.username,
-      createdAt: row.created_at,
+      createdAt: row.createdAt,
       data: safeParseJson(row.data),
-    })).filter((r) => r.data);
-  }
-  ensureDataFiles();
-  const rawData = fs.readFileSync(resultsPath, "utf-8");
-  const lines = rawData.split("\n").filter((l) => l.trim() !== "");
-  const results = [];
-  for (let i = 1; i < lines.length; i += 1) {
-    const values = parseCsvLine(lines[i]);
-    if (values.length >= 4 && values[1] === "scale" && values[0] === username) {
-      const parsed = safeParseJson(values[2]);
-      if (parsed) {
-        results.push({
-          username: values[0],
-          createdAt: values[3],
-          data: parsed,
-        });
-      }
-    }
-  }
-  return results;
+    }))
+    .filter((r) => r.data);
 };
 
 const getTaskResultsByUsername = async (username) => {
-  if (D1_ENABLED) {
-    const result = await d1Query(
-      "SELECT username, type, data, created_at FROM results WHERE username = ? AND type = 'task' ORDER BY created_at ASC",
-      [username]
-    );
-    return (result?.results || []).map((row) => ({
+  const localResults = readLocalResults();
+  return localResults
+    .filter((row) => row.type === "task" && row.username === username)
+    .map((row) => ({
       username: row.username,
-      createdAt: row.created_at,
+      createdAt: row.createdAt,
       data: safeParseJson(row.data),
-    })).filter((r) => r.data);
-  }
-  ensureDataFiles();
-  const rawData = fs.readFileSync(resultsPath, "utf-8");
-  const lines = rawData.split("\n").filter((l) => l.trim() !== "");
-  const results = [];
-  for (let i = 1; i < lines.length; i += 1) {
-    const values = parseCsvLine(lines[i]);
-    if (values.length >= 4 && values[1] === "task" && values[0] === username) {
-      const parsed = safeParseJson(values[2]);
-      if (parsed) {
-        results.push({
-          username: values[0],
-          createdAt: values[3],
-          data: parsed,
-        });
-      }
-    }
-  }
-  return results;
+    }))
+    .filter((r) => r.data);
 };
 
 const upsertProfile = async ({ username, gender, age, grade }) => {
@@ -617,7 +949,7 @@ const upsertProfile = async ({ username, gender, age, grade }) => {
 const updateResults = async ({ username, type, data }) => {
   const now = new Date().toISOString();
   const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
-  if (D1_ENABLED) {
+  if (D1_ENABLED && !shouldUseFileForResult(type)) {
     const existing = await d1Query("SELECT id FROM profiles WHERE username = ? LIMIT 1", [username]);
     const row = existing?.results?.[0];
     const column =
@@ -675,6 +1007,12 @@ const updateResults = async ({ username, type, data }) => {
 const appendResult = async ({ username, type, data }) => {
   const payload = typeof data === "string" ? data : JSON.stringify(data ?? {});
   const createdAt = new Date().toISOString();
+  if (shouldUseFileForResult(type)) {
+    const id = crypto.randomUUID();
+    appendResultToFile({ id, username, type, data: payload, createdAt });
+    return;
+  }
+
   if (D1_ENABLED) {
     const id = crypto.randomUUID();
     await d1Exec(
@@ -800,12 +1138,26 @@ app.post("/api/admin/login", async (req, res) => {
 // 管理员获取对话记录API
 app.get("/api/admin/conversations", async (req, res) => {
   try {
+    const allConversations = readConversations();
+    const result = [];
+    for (const [username, userConversations] of Object.entries(allConversations)) {
+      for (const conversation of userConversations) {
+        result.push({
+          ...conversation,
+          username
+        });
+      }
+    }
+    if (result.length > 0) {
+      return res.json(result);
+    }
+
     if (D1_ENABLED) {
-      const result = await d1Query(
+      const resultDb = await d1Query(
         "SELECT * FROM conversations ORDER BY updated_at DESC",
         []
       );
-      const conversations = result?.results || [];
+      const conversations = resultDb?.results || [];
       const payload = [];
       for (const conv of conversations) {
         const msgResult = await d1Query(
@@ -828,17 +1180,6 @@ app.get("/api/admin/conversations", async (req, res) => {
       return res.json(payload);
     }
 
-    const allConversations = readConversations();
-    const result = [];
-    for (const [username, userConversations] of Object.entries(allConversations)) {
-      for (const conversation of userConversations) {
-        result.push({
-          ...conversation,
-          username
-        });
-      }
-    }
-
     return res.json(result);
   } catch (error) {
     console.error('Get conversations error:', error);
@@ -850,6 +1191,40 @@ app.get("/api/admin/conversations", async (req, res) => {
 // 在 server.js 中找到 /api/admin/users API，修改如下：
 app.get("/api/admin/users", async (req, res) => {
   try {
+    const localUsers = readUsers();
+    if (localUsers.length > 0) {
+      const profilesContent = fs.readFileSync(profilesPath, 'utf-8');
+      const profiles = parseCsv(profilesContent);
+      const profileMap = {};
+      for (const row of profiles.rows) {
+        if (row.username) {
+          profileMap[row.username] = {
+            gender: row.gender || '',
+            age: row.age || '',
+            grade: row.grade || '',
+            scaleResult: row.scaleResult || '',
+            modelResult: row.modelResult || '',
+            gameResult: row.gameResult || '',
+            createdAt: row.createdAt || '',
+            updatedAt: row.updatedAt || ''
+          };
+        }
+      }
+      const usersWithProfiles = localUsers.map(user => {
+        const userRole = user.role || 'student';
+        return {
+          _id: user.id || user._id || user.username,
+          username: user.username,
+          password: user.password,
+          role: userRole,
+          createdAt: user.createdAt || new Date().toISOString(),
+          lastLoginAt: user.lastLoginAt || null,
+          profile: profileMap[user.username] || null
+        };
+      });
+      return res.json(usersWithProfiles);
+    }
+
     if (D1_ENABLED) {
       const usersResult = await d1Query("SELECT * FROM users", []);
       const profilesResult = await d1Query("SELECT * FROM profiles", []);
@@ -868,6 +1243,18 @@ app.get("/api/admin/users", async (req, res) => {
           };
         }
       }
+      if (fs.existsSync(profilesPath)) {
+        const localProfiles = parseCsv(fs.readFileSync(profilesPath, 'utf-8')).rows;
+        for (const row of localProfiles) {
+          if (!row.username) continue;
+          if (!profileMap[row.username]) profileMap[row.username] = {};
+          if (row.scaleResult) profileMap[row.username].scaleResult = row.scaleResult;
+          if (row.gameResult) profileMap[row.username].gameResult = row.gameResult;
+          if (row.modelResult) profileMap[row.username].modelResult = row.modelResult;
+          if (row.updatedAt) profileMap[row.username].updatedAt = row.updatedAt;
+          if (row.createdAt) profileMap[row.username].createdAt = row.createdAt;
+        }
+      }
       const usersWithProfiles = (usersResult?.results || []).map((user) => ({
         _id: user.id || user.username,
         username: user.username,
@@ -880,39 +1267,7 @@ app.get("/api/admin/users", async (req, res) => {
       return res.json(usersWithProfiles);
     }
 
-    const users = readUsers();
-    const profilesContent = fs.readFileSync(profilesPath, 'utf-8');
-    const profiles = parseCsv(profilesContent);
-    const profileMap = {};
-    for (const row of profiles.rows) {
-      if (row.username) {
-        profileMap[row.username] = {
-          gender: row.gender || '',
-          age: row.age || '',
-          grade: row.grade || '',
-          scaleResult: row.scaleResult || '',
-          modelResult: row.modelResult || '',
-          gameResult: row.gameResult || '',
-          createdAt: row.createdAt || '',
-          updatedAt: row.updatedAt || ''
-        };
-      }
-    }
-
-    const usersWithProfiles = users.map(user => {
-      const userRole = user.role || 'student';
-      return {
-        _id: user._id || user.username,
-        username: user.username,
-        password: user.password,
-        role: userRole,
-        createdAt: user.createdAt || new Date().toISOString(),
-        lastLoginAt: user.lastLoginAt || null,
-        profile: profileMap[user.username] || null
-      };
-    });
-
-    return res.json(usersWithProfiles);
+    return res.json([]);
   } catch (error) {
     console.error('Get users error:', error);
     return res.status(500).json({ error: 'Internal server error' });
@@ -922,133 +1277,59 @@ app.get("/api/admin/users", async (req, res) => {
 // 管理员获取量表结果统计 - 修改版
 app.get("/api/admin/scales", async (req, res) => {
   try {
-    if (D1_ENABLED) {
+    let rows = getLocalResultsByType("scale")
+      .map((row) => ({
+        id: row.id,
+        username: row.username,
+        data: row.data,
+        created_at: row.createdAt,
+      }));
+    if (rows.length === 0 && D1_ENABLED) {
       const result = await d1Query(
         "SELECT id, username, data, created_at FROM results WHERE type = 'scale' ORDER BY created_at DESC",
         []
       );
-      const rows = result?.results || [];
-      const scales = rows.map((row) => {
-        const parsedData = safeParseJson(row.data) || {};
-        const scale = {
-          _id: row.id,
-          username: row.username,
-          submittedAt: row.created_at,
-        };
-        if (parsedData.scaleId) {
-          scale.scaleId = parsedData.scaleId;
-          scale.scaleName = getScaleName(parsedData.scaleId);
-        } else if (parsedData.scaleName) {
-          scale.scaleId = parsedData.scaleName;
-          scale.scaleName = parsedData.scaleName;
-        } else {
-          scale.scaleId = "Unknown";
-          scale.scaleName = "未知量表";
-        }
-        if (parsedData.score && parsedData.score.total) {
-          scale.totalScore = parsedData.score.total;
-        } else if (parsedData.totalScore) {
-          scale.totalScore = parsedData.totalScore;
-        } else {
-          scale.totalScore = 0;
-        }
-        if (parsedData.flags && parsedData.flags.riskLevel) {
-          scale.riskLevel = parsedData.flags.riskLevel;
-        } else if (parsedData.riskLevel) {
-          scale.riskLevel = parsedData.riskLevel;
-        } else {
-          scale.riskLevel = "low";
-        }
-        scale.fullData = parsedData;
-        if (parsedData.answers) scale.answers = parsedData.answers;
-        if (parsedData.score) scale.scoreDetails = parsedData.score;
-        if (parsedData.level) scale.level = parsedData.level;
-        return scale;
-      });
-      return res.json(scales);
+      rows = result?.results || [];
     }
+    rows.sort((a, b) => new Date(b.created_at || b.createdAt) - new Date(a.created_at || a.createdAt));
 
-    const rawData = fs.readFileSync(resultsPath, 'utf-8');
-    const lines = rawData.split('\n').filter(l => l.trim() !== '');
-    const scales = [];
-
-    for (let i = 1; i < lines.length; i++) { // 跳过标题行
-      const values = parseCsvLine(lines[i]);
-      if (values.length >= 4 && values[1] === 'scale') { // 只获取量表数据
-        try {
-          // 解析JSON数据，注意csv中的JSON是双引号转义的
-          let dataStr = values[2];
-          // 移除可能的转义字符
-          dataStr = dataStr.replace(/\\"/g, '"');
-          // 如果字符串以引号开头和结尾，去掉它们
-          if (dataStr.startsWith('"') && dataStr.endsWith('"')) {
-            dataStr = dataStr.slice(1, -1);
-          }
-
-          const parsedData = JSON.parse(dataStr);
-
-          // 构建scale对象
-          const scale = {
-            _id: i,
-            username: values[0],
-            submittedAt: values[3]
-          };
-
-          // 处理不同的数据格式
-          if (parsedData.scaleId) {
-            scale.scaleId = parsedData.scaleId;
-            scale.scaleName = getScaleName(parsedData.scaleId); // 获取量表名称
-          } else if (parsedData.scaleName) {
-            scale.scaleId = parsedData.scaleName;
-            scale.scaleName = parsedData.scaleName;
-          } else {
-            scale.scaleId = 'Unknown';
-            scale.scaleName = '未知量表';
-          }
-
-          // 获取总分
-          if (parsedData.score && parsedData.score.total) {
-            scale.totalScore = parsedData.score.total;
-          } else if (parsedData.totalScore) {
-            scale.totalScore = parsedData.totalScore;
-          } else {
-            scale.totalScore = 0;
-          }
-
-          // 获取风险等级
-          if (parsedData.flags && parsedData.flags.riskLevel) {
-            scale.riskLevel = parsedData.flags.riskLevel;
-          } else if (parsedData.riskLevel) {
-            scale.riskLevel = parsedData.riskLevel;
-          } else {
-            scale.riskLevel = 'low';
-          }
-
-          // 保存完整的数据用于详情显示
-          scale.fullData = parsedData;
-
-          // 添加答案数据
-          if (parsedData.answers) {
-            scale.answers = parsedData.answers;
-          }
-
-          // 添加得分详情
-          if (parsedData.score) {
-            scale.scoreDetails = parsedData.score;
-          }
-
-          // 添加等级信息
-          if (parsedData.level) {
-            scale.level = parsedData.level;
-          }
-
-          scales.push(scale);
-        } catch (e) {
-          console.error('解析量表数据失败:', e.message, '行数据:', values[2]);
-          continue;
-        }
+    const scales = rows.map((row) => {
+      const parsedData = safeParseJson(row.data) || {};
+      const scale = {
+        _id: row.id,
+        username: row.username,
+        submittedAt: row.created_at,
+      };
+      if (parsedData.scaleId) {
+        scale.scaleId = parsedData.scaleId;
+        scale.scaleName = getScaleName(parsedData.scaleId);
+      } else if (parsedData.scaleName) {
+        scale.scaleId = parsedData.scaleName;
+        scale.scaleName = parsedData.scaleName;
+      } else {
+        scale.scaleId = "Unknown";
+        scale.scaleName = "未知量表";
       }
-    }
+      if (parsedData.score && parsedData.score.total) {
+        scale.totalScore = parsedData.score.total;
+      } else if (parsedData.totalScore) {
+        scale.totalScore = parsedData.totalScore;
+      } else {
+        scale.totalScore = 0;
+      }
+      if (parsedData.flags && parsedData.flags.riskLevel) {
+        scale.riskLevel = parsedData.flags.riskLevel;
+      } else if (parsedData.riskLevel) {
+        scale.riskLevel = parsedData.riskLevel;
+      } else {
+        scale.riskLevel = "low";
+      }
+      scale.fullData = parsedData;
+      if (parsedData.answers) scale.answers = parsedData.answers;
+      if (parsedData.score) scale.scoreDetails = parsedData.score;
+      if (parsedData.level) scale.level = parsedData.level;
+      return scale;
+    });
 
     return res.json(scales);
   } catch (error) {
@@ -1061,18 +1342,20 @@ app.get("/api/admin/scale/:id", async (req, res) => {
   try {
     const scaleId = req.params.id;
 
-    if (D1_ENABLED) {
+    let row = getLocalResultById(scaleId, "scale");
+    if (!row && D1_ENABLED) {
       const result = await d1Query(
         "SELECT id, username, data, created_at FROM results WHERE id = ? AND type = 'scale' LIMIT 1",
         [scaleId]
       );
-      const row = result?.results?.[0];
-      if (!row) return res.status(404).json({ error: '量表记录不存在' });
+      row = result?.results?.[0] || null;
+    }
+    if (row) {
       const parsedData = safeParseJson(row.data) || {};
       const scale = {
         _id: row.id,
         username: row.username,
-        submittedAt: row.created_at,
+        submittedAt: row.created_at || row.createdAt,
         fullData: parsedData,
       };
       if (parsedData.scaleId) {
@@ -1098,7 +1381,7 @@ app.get("/api/admin/scale/:id", async (req, res) => {
       return res.json(scale);
     }
 
-    const numericId = parseInt(scaleId);
+    const numericId = parseInt(scaleId, 10);
 
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
@@ -2420,6 +2703,16 @@ app.post("/api/log", async (req, res) => {
   }
 });
 
+app.post("/api/admin/d1/export", async (req, res) => {
+  try {
+    const stats = await exportD1ToLocalFiles();
+    return res.json({ ok: true, ...stats });
+  } catch (error) {
+    console.error("Export D1 to files error:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 app.get("/api/ai/context", async (req, res) => {
   try {
     const { username } = req.query || {};
@@ -2579,6 +2872,12 @@ app.get("/api/history/:username", async (req, res) => {
   try {
     const { username } = req.params;
 
+    const allHistory = readConversations();
+    const userHistory = allHistory[username] || [];
+    if (userHistory.length > 0) {
+      return res.json(userHistory);
+    }
+
     if (D1_ENABLED) {
       const user = await getUserByUsername(username);
       const userId = user?.id || null;
@@ -2609,8 +2908,6 @@ app.get("/api/history/:username", async (req, res) => {
       return res.json(payload);
     }
 
-    const allHistory = readConversations();
-    const userHistory = allHistory[username] || [];
     res.json(userHistory);
   } catch (error) {
     console.error('Get history error:', error);
@@ -2623,43 +2920,25 @@ app.post("/api/history/save", async (req, res) => {
   try {
     const { username, conversationId, messages, preview } = req.body;
 
-    if (D1_ENABLED) {
-      const now = new Date().toISOString();
-      const user = await getUserByUsername(username);
-      const userId = user?.id || null;
-      const existing = await d1Query(
-        "SELECT id FROM conversations WHERE id = ? LIMIT 1",
-        [conversationId]
-      );
-      if (existing?.results?.length) {
-        await d1Exec(
-          "UPDATE conversations SET preview = ?, updated_at = ? WHERE id = ?",
-          [preview || "", now, conversationId]
-        );
-      } else {
-        await d1Exec(
-          "INSERT INTO conversations (id, user_id, username, title, preview, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [conversationId, userId, username, preview || "", preview || "", now, now]
-        );
-      }
-
-      await d1Exec("DELETE FROM messages WHERE conversation_id = ?", [conversationId]);
-      for (const m of messages || []) {
-        const msgId = m.id ? String(m.id) : crypto.randomUUID();
-        const role = m.sender === "ai" ? "assistant" : "user";
-        await d1Exec(
-          "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-          [msgId, conversationId, role, m.text || "", now]
-        );
-      }
-      return res.json({ ok: true });
-    }
-
     const allHistory = readConversations();
     if (!allHistory[username]) allHistory[username] = [];
 
     const index = allHistory[username].findIndex(c => c.id === conversationId);
-    const record = { id: conversationId, messages, preview, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const normalizedMessages = (messages || []).map((m) => ({
+      id: m.id ? String(m.id) : crypto.randomUUID(),
+      text: m.text || "",
+      sender: m.sender || "user",
+      createdAt: m.createdAt || now,
+    }));
+    const existingRecord = index > -1 ? allHistory[username][index] : null;
+    const record = {
+      id: conversationId,
+      messages: normalizedMessages,
+      preview,
+      updatedAt: now,
+      createdAt: existingRecord?.createdAt || now,
+    };
 
     if (index > -1) {
       allHistory[username][index] = record;
@@ -2685,6 +2964,7 @@ app.listen(PORT, "0.0.0.0", () => {
 initD1Tables().catch((err) => {
   console.error("Init D1 tables failed:", err);
 });
+scheduleDailyResultsSync();
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
 
@@ -2697,25 +2977,46 @@ app.get("/api/admin/overview/stats", async (req, res) => {
     let userProfiles = [];
     let scaleResults = [];
 
-    if (D1_ENABLED) {
-      const usersResult = await d1Query("SELECT id, username FROM users", []);
-      const profilesResult = await d1Query("SELECT id, username FROM profiles", []);
-      const resultsResult = await d1Query("SELECT id, type, created_at, data FROM results", []);
-      users = usersResult?.results || [];
-      userProfiles = profilesResult?.results || [];
-      scaleResults = (resultsResult?.results || []).map((row) => ({
+    const localUsers = readUsers();
+    if (localUsers.length > 0) {
+      users = localUsers;
+      userProfiles = fs.existsSync(profilesPath)
+        ? parseCsv(fs.readFileSync(profilesPath, 'utf-8')).rows
+        : [];
+      scaleResults = readLocalResults().map((row) => ({
         type: row.type,
-        createdAt: row.created_at,
+        createdAt: row.createdAt,
         data: row.data,
       }));
+    } else if (D1_ENABLED) {
+      const usersResult = await d1Query("SELECT id, username FROM users", []);
+      const profilesResult = await d1Query("SELECT id, username FROM profiles", []);
+      users = usersResult?.results || [];
+      userProfiles = profilesResult?.results || [];
+      const localResults = readLocalResults();
+      scaleResults = localResults.map((row) => ({
+        type: row.type,
+        createdAt: row.createdAt,
+        data: row.data,
+      }));
+      if (scaleResults.length === 0) {
+        const resultsResult = await d1Query("SELECT id, type, created_at, data FROM results", []);
+        scaleResults = (resultsResult?.results || []).map((row) => ({
+          type: row.type,
+          createdAt: row.created_at,
+          data: row.data,
+        }));
+      }
     } else {
       users = readUsers();
       userProfiles = fs.existsSync(profilesPath)
         ? parseCsv(fs.readFileSync(profilesPath, 'utf-8')).rows
         : [];
-      scaleResults = fs.existsSync(resultsPath)
-        ? parseCsv(fs.readFileSync(resultsPath, 'utf-8')).rows
-        : [];
+      scaleResults = readLocalResults().map((row) => ({
+        type: row.type,
+        createdAt: row.createdAt,
+        data: row.data,
+      }));
     }
 
     // 读取活动日志
@@ -2768,12 +3069,12 @@ app.get("/api/admin/overview/stats", async (req, res) => {
     // 计算对话统计
     try {
       // 读取对话数据
-      const conversationsData = D1_ENABLED ? null : readConversations();
+      const conversationsData = readConversations();
       const today = new Date().toISOString().split('T')[0];
       const userSet = new Set();      // 总聊天用户集合
       const todayUserSet = new Set(); // 当天聊天用户集合
 
-      if (D1_ENABLED) {
+      if (D1_ENABLED && Object.keys(conversationsData || {}).length === 0) {
         const convResult = await d1Query("SELECT id, username, updated_at FROM conversations", []);
         const conversations = convResult?.results || [];
         for (const conv of conversations) {
@@ -3147,93 +3448,46 @@ function getTimeAgo(timestamp) {
 // 管理员获取游戏结果API（替换高危预警API）
 app.get("/api/admin/tasks", async (req, res) => {
   try {
-    if (D1_ENABLED) {
+    let rows = getLocalResultsByType("task")
+      .map((row) => ({
+        id: row.id,
+        username: row.username,
+        data: row.data,
+        created_at: row.createdAt,
+      }));
+    if (rows.length === 0 && D1_ENABLED) {
       const result = await d1Query(
         "SELECT id, username, data, created_at FROM results WHERE type = 'task' ORDER BY created_at DESC",
         []
       );
-      const rows = result?.results || [];
-      const tasks = rows.map((row) => {
-        const parsedData = safeParseJson(row.data) || {};
-        const task = {
-          _id: row.id,
-          username: row.username,
-          submittedAt: row.created_at,
-          taskData: parsedData,
-        };
-        if (parsedData.taskId) {
-          task.taskId = parsedData.taskId;
-          task.taskName = getTaskName(parsedData.taskId);
-        } else {
-          task.taskId = "Unknown";
-          task.taskName = "未知游戏";
-        }
-        if (parsedData.summary) {
-          task.summary = parsedData.summary;
-          task.accuracy = parsedData.summary.accuracy || 0;
-          task.meanRT = parsedData.summary.meanRT || 0;
-          task.performanceScore = calculatePerformanceScore(parsedData.summary);
-        }
-        task.fullData = parsedData;
-        return task;
-      });
-      return res.json(tasks);
+      rows = result?.results || [];
     }
+    rows.sort((a, b) => new Date(b.created_at || b.createdAt) - new Date(a.created_at || a.createdAt));
 
-    const rawData = fs.readFileSync(resultsPath, 'utf-8');
-    const lines = rawData.split('\n').filter(l => l.trim() !== '');
-    const tasks = [];
-
-    for (let i = 1; i < lines.length; i++) { // 跳过标题行
-      const values = parseCsvLine(lines[i]);
-      if (values.length >= 4 && values[1] === 'task') { // 只获取游戏数据
-        try {
-          // 解析JSON数据，注意csv中的JSON是双引号转义的
-          let dataStr = values[2];
-          // 移除可能的转义字符
-          dataStr = dataStr.replace(/\\"/g, '"');
-          // 如果字符串以引号开头和结尾，去掉它们
-          if (dataStr.startsWith('"') && dataStr.endsWith('"')) {
-            dataStr = dataStr.slice(1, -1);
-          }
-
-          const parsedData = JSON.parse(dataStr);
-
-          // 构建task对象
-          const task = {
-            _id: i,
-            username: values[0],
-            submittedAt: values[3],
-            taskData: parsedData
-          };
-
-          // 添加任务基本信息
-          if (parsedData.taskId) {
-            task.taskId = parsedData.taskId;
-            task.taskName = getTaskName(parsedData.taskId);
-          } else {
-            task.taskId = 'Unknown';
-            task.taskName = '未知游戏';
-          }
-
-          // 获取摘要信息
-          if (parsedData.summary) {
-            task.summary = parsedData.summary;
-            task.accuracy = parsedData.summary.accuracy || 0;
-            task.meanRT = parsedData.summary.meanRT || 0;
-            task.performanceScore = calculatePerformanceScore(parsedData.summary);
-          }
-
-          // 保存完整的数据用于详情显示
-          task.fullData = parsedData;
-
-          tasks.push(task);
-        } catch (e) {
-          console.error('解析游戏数据失败:', e.message, '行数据:', values[2]);
-          continue;
-        }
+    const tasks = rows.map((row) => {
+      const parsedData = safeParseJson(row.data) || {};
+      const task = {
+        _id: row.id,
+        username: row.username,
+        submittedAt: row.created_at,
+        taskData: parsedData,
+      };
+      if (parsedData.taskId) {
+        task.taskId = parsedData.taskId;
+        task.taskName = getTaskName(parsedData.taskId);
+      } else {
+        task.taskId = "Unknown";
+        task.taskName = "未知游戏";
       }
-    }
+      if (parsedData.summary) {
+        task.summary = parsedData.summary;
+        task.accuracy = parsedData.summary.accuracy || 0;
+        task.meanRT = parsedData.summary.meanRT || 0;
+        task.performanceScore = calculatePerformanceScore(parsedData.summary);
+      }
+      task.fullData = parsedData;
+      return task;
+    });
 
     return res.json(tasks);
   } catch (error) {
@@ -3247,18 +3501,20 @@ app.get("/api/admin/task/:id", async (req, res) => {
   try {
     const taskId = req.params.id;
 
-    if (D1_ENABLED) {
+    let row = getLocalResultById(taskId, "task");
+    if (!row && D1_ENABLED) {
       const result = await d1Query(
         "SELECT id, username, data, created_at FROM results WHERE id = ? AND type = 'task' LIMIT 1",
         [taskId]
       );
-      const row = result?.results?.[0];
-      if (!row) return res.status(404).json({ error: '游戏记录不存在' });
+      row = result?.results?.[0] || null;
+    }
+    if (row) {
       const parsedData = safeParseJson(row.data) || {};
       const task = {
         _id: row.id,
         username: row.username,
-        submittedAt: row.created_at,
+        submittedAt: row.created_at || row.createdAt,
         fullData: parsedData,
       };
       if (parsedData.taskId) {
@@ -3278,7 +3534,7 @@ app.get("/api/admin/task/:id", async (req, res) => {
       return res.json(task);
     }
 
-    const numericId = parseInt(taskId);
+    const numericId = parseInt(taskId, 10);
 
     const rawData = fs.readFileSync(resultsPath, 'utf-8');
     const lines = rawData.split('\n').filter(l => l.trim() !== '');
